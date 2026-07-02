@@ -1,0 +1,17 @@
+name: final
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - jupyterlab
+  - ipykernel
+  - python-dotenv
+  - pip:
+      - fastapi
+      - uvicorn[standard]
