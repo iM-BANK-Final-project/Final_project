@@ -1,0 +1,6 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security or sensitive data concern
+    url: https://github.com
+    about: 민감정보 노출 가능성은 공개 이슈 대신 팀 내부 채널로 먼저 공유하세요.
+

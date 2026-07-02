@@ -1,0 +1,44 @@
+name: Feature request
+description: 웹서비스 기능 또는 사용자 경험 개선을 제안합니다.
+title: "[Feature] "
+labels: ["frontend", "backend"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: 어떤 사용자 문제를 해결하려는지 적어주세요.
+      placeholder: 예) 영업 담당자가 법인고객의 이탈 위험을 빠르게 확인하기 어렵다.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: 원하는 기능이나 화면 흐름을 설명해주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: 완료 여부를 판단할 수 있는 조건을 체크리스트로 적어주세요.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Planning
+        - Frontend
+        - Backend
+        - Data
+        - ML
+        - Docs
+    validations:
+      required: true
+

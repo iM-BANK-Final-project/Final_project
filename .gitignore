@@ -1,0 +1,46 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+.vite/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Data
+data/raw/
+data/private/
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.parquet
+*.sqlite
+*.db
+
+# Logs
+*.log
+logs/
+
