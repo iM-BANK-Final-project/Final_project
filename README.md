@@ -11,6 +11,20 @@
 
 ## Collaboration
 
+## Project Structure
+
+```text
+Final_project/
+├── EDA/                 # 탐색적 데이터 분석, 실험 노트북
+├── src/
+│   ├── backend/         # API, 서버 로직
+│   ├── frontend/        # 웹 화면
+│   ├── preprocessing/   # 데이터 정제, 전처리, 피처 생성
+│   └── models/          # 모델 학습, 추론 코드
+├── docs/                # 기획, 회의록, 설계 문서
+└── tests/               # 테스트 코드
+```
+
 ### Branch Strategy
 
 - `main`: 배포 가능하거나 안정적인 코드만 유지합니다.
