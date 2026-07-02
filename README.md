@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Final Project
 
 법인고객의 36개월 데이터를 활용해 웹서비스를 기획, 개발, 검증하는 최종 프로젝트 저장소입니다.
@@ -53,3 +54,7 @@ git remote add origin https://github.com/<organization>/<repository>.git
 git push -u origin main
 ```
 
+=======
+# Final_project
+IM Digital banker Academy FInal project
+>>>>>>> 7449151b96095b5a93167a8e90a17642beeb490d
