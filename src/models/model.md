@@ -95,7 +95,40 @@ validation은 최종 시간 외 holdout으로 취급한다.
 
 Validation은 8,839행, 양성 220행, 고유 양성 사건 117개다. 전체 LightGBM이 종합 성능이 가장 높고, 직접 신호를 제거한 LightGBM은 종합 성능을 일부 유지하면서 Lead 3과 현재 무감소 Recall이 높아졌다. 현재 성능은 baseline 비교용이며 세그먼트 안정성과 추가 시간구간은 아직 검증하지 않았다.
 
-## 6. Run
+## 6. Feature Importance And SHAP
+
+Train 적합 모델의 LightGBM gain/split importance와 Validation 8,839행 전체의 TreeSHAP을 산출한다. SHAP 양수는 양성 클래스의 raw score를 높이고, 음수는 낮춘다.
+
+| 모델 | Gain 1위 | Gain 비중 | SHAP 1위 | SHAP 비중 |
+| --- | --- | ---: | --- | ---: |
+| LightGBM | `YoY_ratio_핵심거래활동금액` | 24.84% | `YoY_ratio_핵심거래활동금액` | 8.27% |
+| LightGBM_NoDirect | `YoY_ratio_입출금활동금액` | 31.76% | `YoY_ratio_입출금활동금액` | 12.38% |
+
+두 모델 모두 낮은 YoY, 음(-)의 12개월 기울기, 낮은 현재 거래금액이 약화 위험을 높이는 방향으로 나타났다. 채널·입출금의 최근 6개월 변동성이 높은 경우도 위험 raw score가 증가했다.
+
+`LightGBM_NoDirect`는 핵심거래 YoY를 제거했지만 입출금·채널·카드 축별 현재 YoY는 유지한다. 특히 입출금 YoY가 gain 31.76%, SHAP 12.38%로 지배적이므로, 이 모델을 현재 신호가 완전히 제거된 순수 장기 예측 모델이라고 해석하지 않는다.
+
+Gain importance에서 `현재drop50`는 7.77%로 2위지만 Validation mean absolute SHAP에서는 17위, 2.18%다. Gain은 트리 분기 효용, SHAP은 Validation 행별 실제 기여 크기를 나타내므로 용도를 구분해 본다.
+
+```bash
+python -m src.models.run_persistent_weakening_interpretation \
+  --modeling-panel outputs/persistent_weakening_baseline/modeling_panel.csv \
+  --output-dir outputs/persistent_weakening_interpretation
+```
+
+해석 산출물:
+
+```text
+feature_importance.csv
+shap_global_importance.csv
+shap_local_top_rows.csv
+feature_importance_gain.png
+shap_global_importance.png
+shap_beeswarm_lightgbm.png
+shap_beeswarm_lightgbm_no_direct.png
+```
+
+## 7. Run
 
 ```bash
 python -m src.models.run_persistent_weakening_baseline \
