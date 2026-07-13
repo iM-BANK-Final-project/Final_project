@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
+
+
+TARGET_COL = "Y_지속거래약화_3M70"
+EVENT_ID_COL = "지속거래약화사건ID"
 
 
 @dataclass(frozen=True)
@@ -115,3 +120,65 @@ def build_core_activity(
         ["입출금활동금액", "채널활동금액", "카드활동금액"]
     ].sum(axis=1, min_count=3)
     return work
+
+
+def _consecutive_true_count(series: pd.Series) -> pd.Series:
+    result = []
+    count = 0
+    for value in series:
+        if pd.notna(value) and bool(value):
+            count += 1
+        else:
+            count = 0
+        result.append(count)
+    return pd.Series(result, index=series.index, dtype="int64")
+
+
+def build_persistent_weakening_labels(
+    frame: pd.DataFrame,
+    config: LabelConfig | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    config = config or LabelConfig()
+    panel = build_core_activity(frame, config)
+    customer = panel[config.customer_id_col]
+    core = panel["핵심거래활동금액"]
+    grouped_core = core.groupby(customer, sort=False)
+
+    prior_year = grouped_core.shift(12)
+    panel["핵심거래_YoY_ratio"] = core.div(prior_year.where(prior_year.gt(0)))
+    panel["drop50"] = panel["핵심거래_YoY_ratio"].lt(0.50).astype("boolean")
+    panel.loc[panel["핵심거래_YoY_ratio"].isna(), "drop50"] = pd.NA
+    panel["drop50_연속개월수"] = panel.groupby(
+        config.customer_id_col,
+        group_keys=False,
+    )["drop50"].apply(_consecutive_true_count)
+    panel["core_3m_event"] = panel["drop50_연속개월수"].eq(3)
+
+    panel["이벤트이전12개월평균"] = grouped_core.transform(
+        lambda series: series.shift(1).rolling(12, min_periods=12).mean()
+    )
+    panel["이벤트이후3개월평균"] = grouped_core.transform(
+        lambda series: series.shift(-1).rolling(3, min_periods=3).mean().shift(-2)
+    )
+    valid_baseline = panel["이벤트이전12개월평균"].where(
+        panel["이벤트이전12개월평균"].gt(0)
+    )
+    panel["future3_to_baseline"] = panel["이벤트이후3개월평균"].div(
+        valid_baseline
+    )
+
+    panel[TARGET_COL] = pd.Series(pd.NA, index=panel.index, dtype="Int8")
+    decidable = panel["core_3m_event"] & panel["future3_to_baseline"].notna()
+    ratio = panel.loc[decidable, "future3_to_baseline"]
+    positive = ratio.lt(0.70) & ~np.isclose(ratio, 0.70)
+    panel.loc[decidable, TARGET_COL] = positive.astype("int8")
+
+    panel[EVENT_ID_COL] = pd.NA
+    event_rows = panel["core_3m_event"]
+    panel.loc[event_rows, EVENT_ID_COL] = (
+        panel.loc[event_rows, config.customer_id_col].astype(str)
+        + "+"
+        + panel.loc[event_rows, config.month_col].astype(str)
+    )
+    events = panel.loc[event_rows].copy().reset_index(drop=True)
+    return panel, events
