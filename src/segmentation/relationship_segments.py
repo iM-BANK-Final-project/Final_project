@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import adjusted_rand_score
 
 
 SEGMENT_ORDER = (
@@ -320,3 +321,99 @@ def build_segment_profile(assignments: pd.DataFrame) -> pd.DataFrame:
     order = {segment: index for index, segment in enumerate(SEGMENT_ORDER)}
     profile["_order"] = profile["관계세그먼트"].map(order)
     return profile.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+
+
+def validate_complete_segmentation_cohort(
+    monthly: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> pd.DataFrame:
+    config = config or SegmentationConfig()
+    _require_columns(monthly, (config.customer_id_col, config.month_col))
+    expected_months = set(pd.period_range("2023-01", "2025-12", freq="M"))
+    month_sets = monthly.groupby(config.customer_id_col)[config.month_col].agg(set)
+    invalid = month_sets.loc[month_sets.map(lambda values: values != expected_months)]
+    if not invalid.empty:
+        raise ValueError(
+            "2023-01~2025-12의 정확한 36개월을 충족하지 않은 법인이 "
+            f"{len(invalid)}개 있습니다."
+        )
+    return monthly
+
+
+def build_segment_stability(
+    reference_assignments: pd.DataFrame,
+    comparison_assignments: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> pd.DataFrame:
+    config = config or SegmentationConfig()
+    required = (config.customer_id_col, "관계세그먼트")
+    _require_columns(reference_assignments, required)
+    _require_columns(comparison_assignments, required)
+    if reference_assignments[config.customer_id_col].duplicated().any():
+        raise ValueError("기준 세그먼트에 중복 법인ID가 있습니다.")
+    if comparison_assignments[config.customer_id_col].duplicated().any():
+        raise ValueError("비교 세그먼트에 중복 법인ID가 있습니다.")
+
+    merged = reference_assignments.loc[:, required].merge(
+        comparison_assignments.loc[:, required],
+        on=config.customer_id_col,
+        how="outer",
+        validate="one_to_one",
+        suffixes=("_기준", "_비교"),
+        indicator=True,
+    )
+    if not merged["_merge"].eq("both").all():
+        raise ValueError("기준·비교 기간의 법인 집합이 일치하지 않습니다.")
+    reference_col = "관계세그먼트_기준"
+    comparison_col = "관계세그먼트_비교"
+    same = merged[reference_col].eq(merged[comparison_col])
+    ari = float(
+        adjusted_rand_score(merged[reference_col], merged[comparison_col])
+    )
+    reference_share = merged[reference_col].value_counts(normalize=True)
+    comparison_share = merged[comparison_col].value_counts(normalize=True)
+    max_share_change = max(
+        abs(
+            float(comparison_share.get(segment, 0.0))
+            - float(reference_share.get(segment, 0.0))
+        )
+        for segment in SEGMENT_ORDER
+    )
+    rows: list[dict[str, object]] = [
+        {
+            "구분": "전체",
+            "기준법인수": len(merged),
+            "비교법인수": len(merged),
+            "동일세그먼트유지율": float(same.mean()),
+            "ARI": ari,
+            "기준비율": 1.0,
+            "비교비율": 1.0,
+            "구성비변화": max_share_change,
+        }
+    ]
+    for segment in SEGMENT_ORDER:
+        reference_mask = merged[reference_col].eq(segment)
+        reference_count = int(reference_mask.sum())
+        comparison_count = int(merged[comparison_col].eq(segment).sum())
+        if reference_count == 0 and comparison_count == 0:
+            continue
+        retention = (
+            float(same.loc[reference_mask].mean())
+            if reference_count > 0
+            else np.nan
+        )
+        base_share = float(reference_share.get(segment, 0.0))
+        compare_share = float(comparison_share.get(segment, 0.0))
+        rows.append(
+            {
+                "구분": segment,
+                "기준법인수": reference_count,
+                "비교법인수": comparison_count,
+                "동일세그먼트유지율": retention,
+                "ARI": np.nan,
+                "기준비율": base_share,
+                "비교비율": compare_share,
+                "구성비변화": compare_share - base_share,
+            }
+        )
+    return pd.DataFrame(rows)

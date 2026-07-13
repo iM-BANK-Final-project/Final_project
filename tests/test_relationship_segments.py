@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -10,9 +12,13 @@ from src.segmentation.relationship_segments import (
     assign_l30_h70_m15,
     build_monthly_relationship_axes,
     build_segment_profile,
+    build_segment_stability,
     fit_reference_scores,
     score_against_reference,
     summarize_relationship_window,
+)
+from src.segmentation.run_relationship_segments import (
+    run_relationship_segmentation,
 )
 
 
@@ -61,6 +67,15 @@ def score_frame(values: list[tuple[float, float, float]]) -> pd.DataFrame:
             "거래활동점수": [value[0] for value in values],
             "수신관계점수": [value[1] for value in values],
             "여신관계점수": [value[2] for value in values],
+        }
+    )
+
+
+def assignment_frame(segments: list[str]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "법인ID": [f"C{index}" for index in range(len(segments))],
+            "관계세그먼트": segments,
         }
     )
 
@@ -208,6 +223,68 @@ class SegmentRuleTests(unittest.TestCase):
         self.assertEqual(profile["법인수"].sum(), 2)
         self.assertAlmostEqual(profile["비율"].sum(), 1.0)
         self.assertEqual(set(profile["관계세그먼트"]), {"저관계", "복합고관계"})
+
+
+class RunnerTests(unittest.TestCase):
+    def test_stability_contains_overall_and_segment_metrics(self):
+        reference = assignment_frame(
+            ["저관계", "저관계", "수신중심", "수신중심"]
+        )
+        comparison = assignment_frame(
+            ["저관계", "수신중심", "수신중심", "수신중심"]
+        )
+
+        stability = build_segment_stability(reference, comparison)
+
+        overall = stability.loc[stability["구분"].eq("전체")].iloc[0]
+        low = stability.loc[stability["구분"].eq("저관계")].iloc[0]
+        self.assertEqual(overall["동일세그먼트유지율"], 0.75)
+        self.assertAlmostEqual(overall["ARI"], 0.0)
+        self.assertEqual(low["기준법인수"], 2)
+        self.assertEqual(low["동일세그먼트유지율"], 0.5)
+        self.assertIn("구성비변화", stability.columns)
+
+    def test_runner_writes_six_auditable_csv_files(self):
+        source = make_monthly_source(
+            customer_ids=("A", "B", "C"),
+            years=(2023, 2024, 2025),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "source.csv"
+            source.to_csv(input_path, index=False)
+
+            paths = run_relationship_segmentation(
+                input_path,
+                root / "outputs",
+            )
+
+            self.assertEqual(
+                set(paths),
+                {
+                    "reference_2023",
+                    "assignments_2023",
+                    "profile_2023",
+                    "assignments_2024",
+                    "profile_2024",
+                    "stability_2023_2024",
+                },
+            )
+            self.assertTrue(all(path.exists() for path in paths.values()))
+            assignments = pd.read_csv(paths["assignments_2023"])
+            self.assertEqual(len(assignments), 3)
+            self.assertTrue(
+                {
+                    "거래활동관계수준",
+                    "수신관계수준",
+                    "여신관계수준",
+                    "거래활동점수",
+                    "수신관계점수",
+                    "여신관계점수",
+                    "관계세그먼트",
+                }.issubset(assignments.columns)
+            )
 
 
 if __name__ == "__main__":
