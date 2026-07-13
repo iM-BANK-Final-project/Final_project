@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -8,6 +10,9 @@ from src.preprocessing.persistent_transaction_weakening_labels import (
     build_core_activity,
     build_persistent_weakening_labels,
     validate_complete_cohort,
+)
+from src.preprocessing.run_persistent_transaction_weakening_labels import (
+    run_label_pipeline,
 )
 
 
@@ -138,6 +143,30 @@ class PersistentWeakeningLabelTest(unittest.TestCase):
 
         self.assertEqual(events["기준년월"].astype(str).tolist(), ["2024-03", "2024-07"])
         self.assertEqual(events["지속거래약화사건ID"].nunique(), 2)
+
+
+class LabelRunnerTest(unittest.TestCase):
+    def test_writes_panel_and_event_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "input.csv"
+            complete_frame().to_csv(input_path, index=False)
+
+            panel_path, events_path = run_label_pipeline(
+                input_path,
+                root / "outputs",
+            )
+
+            self.assertTrue(panel_path.exists())
+            self.assertTrue(events_path.exists())
+            self.assertEqual(
+                panel_path.name,
+                "persistent_transaction_weakening_panel.csv",
+            )
+            self.assertEqual(
+                events_path.name,
+                "persistent_transaction_weakening_events.csv",
+            )
 
 
 if __name__ == "__main__":
