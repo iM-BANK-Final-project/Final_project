@@ -15,6 +15,7 @@ from src.segmentation.relationship_segments import (
     build_segment_stability,
     fit_reference_scores,
     score_against_reference,
+    select_complete_segmentation_cohort,
     summarize_relationship_window,
 )
 from src.segmentation.run_relationship_segments import (
@@ -161,10 +162,9 @@ class SegmentRuleTests(unittest.TestCase):
             scored["거래활동점수"].tolist(),
             [0.375, 0.375, 0.75, 1.0],
         )
-        pd.testing.assert_series_equal(
-            scored["거래활동점수"],
-            rescored["거래활동점수"],
-            check_names=False,
+        self.assertEqual(
+            rescored["거래활동점수"].tolist(),
+            [0.5, 0.5, 0.75, 1.0],
         )
 
     def test_future_scores_use_frozen_reference_distribution(self):
@@ -226,6 +226,24 @@ class SegmentRuleTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_selects_only_complete_2023_to_2025_customers(self):
+        complete = make_monthly_source(
+            customer_ids=("A", "B"),
+            years=(2023, 2024, 2025),
+        )
+        incomplete = complete.loc[
+            ~(
+                complete["법인ID"].eq("B")
+                & complete["기준년월"].eq(202512)
+            )
+        ]
+        monthly = build_monthly_relationship_axes(incomplete)
+
+        selected = select_complete_segmentation_cohort(monthly)
+
+        self.assertEqual(selected["법인ID"].unique().tolist(), ["A"])
+        self.assertEqual(len(selected), 36)
+
     def test_stability_contains_overall_and_segment_metrics(self):
         reference = assignment_frame(
             ["저관계", "저관계", "수신중심", "수신중심"]

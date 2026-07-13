@@ -13,8 +13,8 @@ from src.segmentation.relationship_segments import (
     build_segment_stability,
     fit_reference_scores,
     score_against_reference,
+    select_complete_segmentation_cohort,
     summarize_relationship_window,
-    validate_complete_segmentation_cohort,
 )
 
 
@@ -34,7 +34,7 @@ def run_relationship_segmentation(
 ) -> dict[str, Path]:
     config = SegmentationConfig()
     source = pd.read_csv(input_path, usecols=list(config.required_columns))
-    monthly = validate_complete_segmentation_cohort(
+    monthly = select_complete_segmentation_cohort(
         build_monthly_relationship_axes(source, config),
         config,
     )

@@ -240,12 +240,9 @@ def _score_one_axis(
     if reference_sorted.size == 0:
         raise ValueError("고정 percentile 기준분포가 비어 있습니다.")
     values = values.astype(float)
-    left = np.searchsorted(reference_sorted, values, side="left")
     right = np.searchsorted(reference_sorted, values, side="right")
     count = float(reference_sorted.size)
     scores = right.astype(float) / count
-    tied = right > left
-    scores[tied] = (left[tied] + right[tied] + 1.0) / (2.0 * count)
     return np.clip(scores, 0.0, 1.0)
 
 
@@ -323,7 +320,7 @@ def build_segment_profile(assignments: pd.DataFrame) -> pd.DataFrame:
     return profile.sort_values("_order").drop(columns="_order").reset_index(drop=True)
 
 
-def validate_complete_segmentation_cohort(
+def select_complete_segmentation_cohort(
     monthly: pd.DataFrame,
     config: SegmentationConfig | None = None,
 ) -> pd.DataFrame:
@@ -331,13 +328,14 @@ def validate_complete_segmentation_cohort(
     _require_columns(monthly, (config.customer_id_col, config.month_col))
     expected_months = set(pd.period_range("2023-01", "2025-12", freq="M"))
     month_sets = monthly.groupby(config.customer_id_col)[config.month_col].agg(set)
-    invalid = month_sets.loc[month_sets.map(lambda values: values != expected_months)]
-    if not invalid.empty:
-        raise ValueError(
-            "2023-01~2025-12의 정확한 36개월을 충족하지 않은 법인이 "
-            f"{len(invalid)}개 있습니다."
-        )
-    return monthly
+    complete_ids = month_sets.index[
+        month_sets.map(lambda values: values == expected_months)
+    ]
+    if complete_ids.empty:
+        raise ValueError("2023-01~2025-12 완전관측 법인이 없습니다.")
+    return monthly.loc[
+        monthly[config.customer_id_col].isin(complete_ids)
+    ].copy().reset_index(drop=True)
 
 
 def build_segment_stability(
