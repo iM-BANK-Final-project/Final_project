@@ -26,6 +26,7 @@ AND
 
 - 최종 이벤트 Y 확정
 - pandas 기반 법인×월 라벨 및 사건 테이블 구현
+- `L30_H70_M15` 관계 세그먼트 및 2024 안정성 검증 구현
 - 기존 5축 동시감소 Y와 해당 모델 성능 사용 중단
 - rolling 조기예측 target과 새 모델 성능은 재설계·재학습 대기
 
@@ -43,6 +44,29 @@ python -m src.preprocessing.run_persistent_transaction_weakening_labels \
 persistent_transaction_weakening_panel.csv
 persistent_transaction_weakening_events.csv
 ```
+
+## Run Relationship Segments
+
+2023년 12개월로 세 관계축 기준분포를 만들고, 같은 기준을 2024년에 고정 적용합니다.
+
+```bash
+python -m src.segmentation.run_relationship_segments \
+  --input /path/to/corporate_monthly.csv \
+  --output-dir outputs/relationship_segments
+```
+
+출력:
+
+```text
+relationship_segment_reference_2023.csv
+relationship_segment_assignments_2023.csv
+relationship_segment_profile_2023.csv
+relationship_segment_assignments_2024.csv
+relationship_segment_profile_2024.csv
+relationship_segment_stability_2023_2024.csv
+```
+
+실제 데이터에서 2023년 세그먼트 수를 모두 재현했고, 2024년 동일유형 유지율은 80.01%, ARI는 0.5866입니다.
 
 ## Service Flow
 
@@ -71,3 +95,5 @@ persistent_transaction_weakening_events.csv
 - Implementation spec: [2026-07-13-persistent-transaction-weakening-y-design.md](/Users/gggyyu/Final_project/docs/superpowers/specs/2026-07-13-persistent-transaction-weakening-y-design.md)
 - Implementation plan: [2026-07-13-persistent-transaction-weakening-y.md](/Users/gggyyu/Final_project/docs/superpowers/plans/2026-07-13-persistent-transaction-weakening-y.md)
 - Modeling gate: [src/models/model.md](/Users/gggyyu/Final_project/src/models/model.md)
+- Segmentation design: [2026-07-13-rule-based-relationship-segmentation-design.md](/Users/gggyyu/Final_project/docs/superpowers/specs/2026-07-13-rule-based-relationship-segmentation-design.md)
+- Segmentation implementation: [relationship_segments.py](/Users/gggyyu/Final_project/src/segmentation/relationship_segments.py)
