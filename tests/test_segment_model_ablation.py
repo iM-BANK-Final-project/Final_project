@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
+from pathlib import Path
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -22,6 +24,14 @@ from src.models.segment_model_ablation import (
     join_relationship_features,
     select_best_feature_addition,
 )
+from src.models.run_segment_model_ablation import (
+    OUTPUT_FILENAMES,
+    build_source_columns,
+    run_segment_model_ablation,
+    write_segment_ablation_outputs,
+)
+from src.preprocessing.persistent_transaction_weakening_labels import LabelConfig
+from src.segmentation.relationship_segments import SegmentationConfig
 
 
 def modeling_frame() -> pd.DataFrame:
@@ -307,6 +317,98 @@ class FixedAblationExperimentTests(unittest.TestCase):
                 "상위10%Lift",
             }.issubset(diagnostics.columns)
         )
+
+
+def raw_segment_source(customer_id: str, event_month: str | None = None):
+    label_config = LabelConfig()
+    segment_config = SegmentationConfig()
+    months = pd.period_range("2023-01", "2025-12", freq="M")
+    core_values = np.full(len(months), 100.0)
+    if event_month is not None:
+        event_index = months.get_loc(pd.Period(event_month, freq="M"))
+        core_values[event_index - 2 : event_index + 1] = 49.0
+        core_values[event_index + 1 : event_index + 4] = 40.0
+    rows: list[dict[str, object]] = []
+    for month, core_value in zip(months, core_values):
+        row: dict[str, object] = {
+            "법인ID": customer_id,
+            "기준년월": int(month.strftime("%Y%m")),
+        }
+        row.update({column: 0.0 for column in segment_config.amount_cols})
+        for column in label_config.amount_cols:
+            row[column] = core_value / len(label_config.amount_cols)
+        row["요구불예금잔액"] = 10.0 + int(customer_id[1:])
+        row["여신_운전자금대출잔액"] = 20.0 + int(customer_id[1:])
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+class SegmentAblationRunnerTests(unittest.TestCase):
+    def test_source_columns_are_deduplicated_union(self):
+        columns = build_source_columns()
+        expected = {
+            "법인ID",
+            "기준년월",
+            *LabelConfig().amount_cols,
+            *SegmentationConfig().amount_cols,
+        }
+
+        self.assertEqual(set(columns), expected)
+        self.assertEqual(len(columns), len(set(columns)))
+
+    def test_writer_requires_and_writes_six_outputs(self):
+        frames = {
+            name: pd.DataFrame({"value": [1]})
+            for name in OUTPUT_FILENAMES
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            paths = write_segment_ablation_outputs(
+                frames,
+                Path(directory),
+            )
+
+            self.assertEqual(set(paths), set(OUTPUT_FILENAMES))
+            self.assertTrue(all(path.exists() for path in paths.values()))
+        with self.assertRaisesRegex(ValueError, "산출물"):
+            write_segment_ablation_outputs({}, Path("unused"))
+
+    def test_runs_same_complete_cohort_through_fixed_split(self):
+        source = pd.concat(
+            [
+                raw_segment_source("C1", "2024-05"),
+                raw_segment_source("C2"),
+                raw_segment_source("C3", "2025-05"),
+                raw_segment_source("C4"),
+                raw_segment_source("C5").iloc[:-1],
+            ],
+            ignore_index=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "source.csv"
+            source.to_csv(input_path, index=False)
+
+            paths = run_segment_model_ablation(
+                input_path,
+                root / "outputs",
+            )
+
+            panel = pd.read_csv(paths["modeling_panel"])
+            scores = pd.read_csv(paths["validation_scores"])
+            self.assertNotIn("C5", panel["법인ID"].tolist())
+            self.assertTrue(
+                set(RELATIONSHIP_SCORE_COLUMNS).issubset(panel.columns)
+            )
+            self.assertEqual(scores["기준년월"].min(), "2025-04")
+            self.assertEqual(scores["기준년월"].max(), "2025-06")
+            self.assertEqual(scores.groupby("모델").size().nunique(), 1)
+            self.assertEqual(
+                panel.loc[
+                    panel["기준년월"].between("2024-10", "2025-03")
+                ].shape[0]
+                > 0,
+                True,
+            )
 
 
 if __name__ == "__main__":

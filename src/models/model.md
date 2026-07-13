@@ -153,3 +153,65 @@ src/models/persistent_weakening_baseline.py
 src/models/run_persistent_weakening_baseline.py
 tests/test_persistent_weakening_modeling.py
 ```
+
+## 8. Relationship Segment Feature Ablation
+
+`segmentation_final_report.md`의 L30_H70_M15 관계 세그먼트를 기존 모델에
+추가하는 비교 실험을 별도로 둔다. 기준월 `t`의 세 관계축은 다음처럼 만든다.
+
+```text
+거래활동관계수준(t) = median(log1p(거래활동금액), t-11~t)
+수신관계수준(t) = median(log1p(수신관계금액), t-11~t)
+여신관계수준(t) = median(log1p(여신관계금액), t-11~t)
+```
+
+세 수준은 2023-01~2023-12 법인별 관계수준의 고정 경험분포로 percentile
+점수화한다. 기준월 이후 값은 사용하지 않으며, 2024년 전체를 미리 집계한
+세그먼트를 2024년 중간 기준월에 붙이지 않는다. 관계 feature는
+`법인ID+기준년월`로 one-to-one 결합하고 누락·중복·행수 변화가 있으면 실행을
+중단한다.
+
+동일한 Train, purge, Validation, Y, LightGBM 파라미터로 다음을 비교한다.
+
+```text
+LightGBM_Base = 기존 전체 feature
+LightGBM_Segment = Base + 관계세그먼트 6개 one-hot
+LightGBM_Axis = Base + 거래활동·수신·여신 관계점수
+LightGBM_Both = Base + 관계점수 + 관계세그먼트 one-hot
+LightGBM_NoDirect = 직접 약화 신호 3개 제거
+LightGBM_NoDirect_Best = NoDirect + 1단계 최적 추가 feature군
+```
+
+1단계 최적 feature군은 Validation 상위 10%에서 `PR-AUC`, 사건 Recall, 행
+Recall, 추가 feature 수가 적은 순으로 결정한다. Base가 선택되면 중복되는
+`LightGBM_NoDirect_Best`는 만들지 않는다. 같은 Validation으로 추가 feature를
+선택했으므로 이 비교는 탐색 결과다. 최종 일반화 성능을 주장하려면 이후의
+손대지 않은 추가 시간 구간에서 다시 평가해야 한다.
+
+```bash
+python -m src.models.run_segment_model_ablation \
+  --input /path/to/corporate_monthly.csv \
+  --output-dir outputs/segment_model_ablation
+```
+
+출력은 augmented modeling panel, Validation 예측·지표·lift, 세그먼트별 진단,
+feature 선택표의 여섯 CSV다.
+
+2026-07-14 실데이터 재실행 결과는 다음과 같다. 모든 모델은 동일한 Validation
+8,839행과 양성 220행을 사용했다.
+
+| 모델 | PR-AUC | Top 10% Recall | Top 10% Lift | 사건 Recall |
+| --- | ---: | ---: | ---: | ---: |
+| LightGBM_Base | 0.1970 | 61.82% | 6.18 | 79.49% |
+| LightGBM_Segment | 0.1940 | 60.45% | 6.04 | 76.92% |
+| LightGBM_Axis | 0.1947 | 61.82% | 6.18 | 78.63% |
+| LightGBM_Both | **0.1988** | 61.36% | 6.14 | 76.07% |
+| LightGBM_NoDirect | 0.1824 | 55.45% | 5.54 | 70.09% |
+| LightGBM_NoDirect_Best | **0.1865** | **57.27%** | **5.73** | 68.38% |
+
+정해 둔 1차 선택 규칙에서는 `Both`가 PR-AUC 1위라 선택됐다. 다만 Base 대비
+증가는 0.0017로 작고 Top 10% Recall과 사건 Recall은 오히려 낮다. 따라서 현재
+결과는 세그먼트가 뚜렷한 종합 성능 향상을 만들었다고 결론 내리지 않고,
+관계 feature가 일부 순위 정보를 추가했을 가능성을 확인한 탐색 결과로 본다.
+NoDirect에 Both를 추가하면 PR-AUC와 행 Recall은 증가하지만 사건 Recall은
+감소하므로 운영 목적별 trade-off를 추가 시간 구간에서 다시 검증한다.
