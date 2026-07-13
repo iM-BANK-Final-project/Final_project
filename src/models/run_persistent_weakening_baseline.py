@@ -13,7 +13,9 @@ from src.models.persistent_weakening_baseline import (
     split_train_validation,
 )
 from src.preprocessing.persistent_transaction_weakening_labels import (
+    LabelConfig,
     build_persistent_weakening_labels,
+    select_complete_cohort,
 )
 
 
@@ -60,7 +62,14 @@ def run_baseline(
     input_path: Path,
     output_dir: Path,
 ) -> dict[str, Path]:
-    source = pd.read_csv(input_path)
+    config = LabelConfig()
+    source = pd.read_csv(
+        input_path,
+        usecols=[config.customer_id_col, config.month_col, *config.amount_cols],
+    )
+    source = select_complete_cohort(source, config)
+    if source.empty:
+        raise ValueError("2023-01~2025-12 완전관측 법인이 없습니다.")
     labels, _ = build_persistent_weakening_labels(source)
     modeling = build_modeling_features(labels)
     train, validation = split_train_validation(modeling)

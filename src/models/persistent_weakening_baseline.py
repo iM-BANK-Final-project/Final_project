@@ -253,6 +253,7 @@ def evaluate_scored_rows(
     rows: list[dict[str, object]] = []
     for model_name, group in scored.groupby("모델", sort=False):
         group = group.copy()
+        has_ranking = group["예측확률"].nunique(dropna=False) > 1
         positives = int(group[MODEL_TARGET_COL].sum())
         base_rate = float(group[MODEL_TARGET_COL].mean())
         total_events = group[FUTURE_EVENT_ID_COL].dropna().nunique()
@@ -281,24 +282,32 @@ def evaluate_scored_rows(
                 "K": fraction,
                 "알림수": count,
                 "PR_AUC": pr_auc,
-                "Recall_at_K": captured / positives if positives else np.nan,
-                "Precision_at_K": precision,
-                "Lift_at_K": precision / base_rate if base_rate else np.nan,
-                "사건Recall_at_K": (
-                    captured_events / total_events if total_events else np.nan
+                "Recall_at_K": (
+                    captured / positives if positives and has_ranking else np.nan
                 ),
-                "현재무감소_Recall_at_K": _recall_for_mask(
-                    top,
-                    group,
-                    no_current_drop_mask,
+                "Precision_at_K": precision if has_ranking else np.nan,
+                "Lift_at_K": (
+                    precision / base_rate
+                    if base_rate and has_ranking
+                    else np.nan
+                ),
+                "사건Recall_at_K": (
+                    captured_events / total_events
+                    if total_events and has_ranking
+                    else np.nan
+                ),
+                "현재무감소_Recall_at_K": (
+                    _recall_for_mask(top, group, no_current_drop_mask)
+                    if has_ranking
+                    else np.nan
                 ),
             }
             for lead in (1, 2, 3):
                 lead_mask = positive_mask & group[LEAD_MONTHS_COL].eq(lead)
-                row[f"Lead{lead}_Recall_at_K"] = _recall_for_mask(
-                    top,
-                    group,
-                    lead_mask,
+                row[f"Lead{lead}_Recall_at_K"] = (
+                    _recall_for_mask(top, group, lead_mask)
+                    if has_ranking
+                    else np.nan
                 )
             rows.append(row)
     return pd.DataFrame(rows)
@@ -402,9 +411,26 @@ def build_lift_table(
     rows: list[pd.DataFrame] = []
     for model_name, group in scores.groupby("모델", sort=False):
         work = group.copy()
+        base_rate = float(work[MODEL_TARGET_COL].mean())
+        if work["예측확률"].nunique(dropna=False) == 1:
+            rows.append(
+                pd.DataFrame(
+                    {
+                        "모델": [model_name],
+                        "점수구간": [1],
+                        "행수": [len(work)],
+                        "양성수": [int(work[MODEL_TARGET_COL].sum())],
+                        "양성률": [base_rate],
+                        "최소점수": [work["예측확률"].iloc[0]],
+                        "최대점수": [work["예측확률"].iloc[0]],
+                        "전체양성률": [base_rate],
+                        "Lift": [1.0 if base_rate else np.nan],
+                    }
+                )
+            )
+            continue
         rank = work["예측확률"].rank(method="first", ascending=False)
         work["점수구간"] = np.ceil(rank / len(work) * n_bins).astype(int)
-        base_rate = float(work[MODEL_TARGET_COL].mean())
         summary = (
             work.groupby("점수구간", as_index=False)
             .agg(

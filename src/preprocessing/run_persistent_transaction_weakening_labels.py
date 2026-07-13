@@ -6,7 +6,9 @@ from pathlib import Path
 import pandas as pd
 
 from src.preprocessing.persistent_transaction_weakening_labels import (
+    LabelConfig,
     build_persistent_weakening_labels,
+    select_complete_cohort,
 )
 
 
@@ -14,7 +16,14 @@ def run_label_pipeline(
     input_path: Path,
     output_dir: Path,
 ) -> tuple[Path, Path]:
-    source = pd.read_csv(input_path)
+    config = LabelConfig()
+    source = pd.read_csv(
+        input_path,
+        usecols=[config.customer_id_col, config.month_col, *config.amount_cols],
+    )
+    source = select_complete_cohort(source, config)
+    if source.empty:
+        raise ValueError("2023-01~2025-12 완전관측 법인이 없습니다.")
     panel, events = build_persistent_weakening_labels(source)
     output_dir.mkdir(parents=True, exist_ok=True)
     panel_path = output_dir / "persistent_transaction_weakening_panel.csv"

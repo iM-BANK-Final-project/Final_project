@@ -15,6 +15,8 @@ class LabelConfig:
     customer_id_col: str = "법인ID"
     month_col: str = "기준년월"
     expected_months: int = 36
+    expected_start: str = "2023-01"
+    expected_end: str = "2025-12"
     flow_cols: tuple[str, ...] = ("요구불입금금액", "요구불출금금액")
     channel_cols: tuple[str, ...] = (
         "창구거래금액",
@@ -34,6 +36,48 @@ def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise ValueError(f"필수 컬럼이 없습니다: {missing}")
+
+
+def select_complete_cohort(
+    frame: pd.DataFrame,
+    config: LabelConfig | None = None,
+) -> pd.DataFrame:
+    config = config or LabelConfig()
+    _require_columns(frame, (config.customer_id_col, config.month_col))
+    parsed = pd.to_datetime(
+        frame[config.month_col].astype(str),
+        format="%Y%m",
+        errors="coerce",
+    ).dt.to_period("M")
+    if parsed.isna().any():
+        examples = frame.loc[parsed.isna(), config.month_col].head(5).tolist()
+        raise ValueError(f"기준년월 파싱 실패: {examples}")
+
+    keys = pd.DataFrame(
+        {
+            config.customer_id_col: frame[config.customer_id_col].to_numpy(),
+            "_month": parsed.to_numpy(),
+        },
+        index=frame.index,
+    )
+    duplicated = keys.duplicated(
+        [config.customer_id_col, "_month"],
+        keep=False,
+    )
+    if duplicated.any():
+        raise ValueError("법인×월 중복이 있어 완전관측 코호트를 선택할 수 없습니다.")
+
+    summary = keys.groupby(config.customer_id_col)["_month"].agg(
+        ["size", "min", "max"]
+    )
+    complete_ids = summary.index[
+        summary["size"].eq(config.expected_months)
+        & summary["min"].eq(pd.Period(config.expected_start, freq="M"))
+        & summary["max"].eq(pd.Period(config.expected_end, freq="M"))
+    ]
+    return frame.loc[
+        frame[config.customer_id_col].isin(complete_ids)
+    ].copy().reset_index(drop=True)
 
 
 def validate_complete_cohort(
@@ -152,7 +196,12 @@ def build_persistent_weakening_labels(
         config.customer_id_col,
         group_keys=False,
     )["drop50"].apply(_consecutive_true_count)
-    panel["core_3m_event"] = panel["drop50_연속개월수"].eq(3)
+    event_candidate = panel["drop50_연속개월수"].eq(3)
+    event_order = event_candidate.groupby(
+        panel[config.customer_id_col],
+        sort=False,
+    ).cumsum()
+    panel["core_3m_event"] = event_candidate & event_order.eq(1)
 
     panel["이벤트이전12개월평균"] = grouped_core.transform(
         lambda series: series.shift(1).rolling(12, min_periods=12).mean()

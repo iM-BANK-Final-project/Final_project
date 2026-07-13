@@ -9,6 +9,7 @@ from src.preprocessing.persistent_transaction_weakening_labels import (
     LabelConfig,
     build_core_activity,
     build_persistent_weakening_labels,
+    select_complete_cohort,
     validate_complete_cohort,
 )
 from src.preprocessing.run_persistent_transaction_weakening_labels import (
@@ -52,6 +53,16 @@ def activity_frame(core_values):
 
 
 class CoreActivityContractTest(unittest.TestCase):
+    def test_selects_only_exact_project_period_complete_customers(self):
+        complete = complete_frame("C1")
+        incomplete = complete_frame("C2").iloc[:-1]
+        source = pd.concat([complete, incomplete], ignore_index=True)
+
+        selected = select_complete_cohort(source, LabelConfig())
+
+        self.assertEqual(selected["법인ID"].unique().tolist(), ["C1"])
+        self.assertEqual(len(selected), 36)
+
     def test_aggregates_flow_channel_card_and_core(self):
         result = build_core_activity(complete_frame(), LabelConfig())
         row = result.iloc[0]
@@ -134,15 +145,15 @@ class PersistentWeakeningLabelTest(unittest.TestCase):
         self.assertTrue(panel.loc[target_months, "drop50"].isna().all())
         self.assertTrue(events.empty)
 
-    def test_recovery_allows_a_new_three_month_event(self):
+    def test_only_first_three_month_event_is_used_per_customer(self):
         values = [100.0] * 36
         values[12:18] = [49.0, 49.0, 49.0, 100.0, 49.0, 49.0]
         values[18:22] = [49.0, 40.0, 40.0, 40.0]
 
         _, events = build_persistent_weakening_labels(activity_frame(values))
 
-        self.assertEqual(events["기준년월"].astype(str).tolist(), ["2024-03", "2024-07"])
-        self.assertEqual(events["지속거래약화사건ID"].nunique(), 2)
+        self.assertEqual(events["기준년월"].astype(str).tolist(), ["2024-03"])
+        self.assertEqual(events["지속거래약화사건ID"].nunique(), 1)
 
 
 class LabelRunnerTest(unittest.TestCase):

@@ -191,6 +191,34 @@ class PastOnlyFeatureTest(unittest.TestCase):
 
 
 class BaselineEvaluationTest(unittest.TestCase):
+    def test_constant_scores_do_not_report_arbitrary_ranking_metrics(self):
+        scored = pd.DataFrame(
+            {
+                "법인ID": ["A", "B", "C", "D"],
+                "기준년월": [pd.Period("2025-04")] * 4,
+                MODEL_TARGET_COL: [1, 0, 1, 0],
+                FUTURE_EVENT_ID_COL: [
+                    "A+2025-05",
+                    pd.NA,
+                    "C+2025-06",
+                    pd.NA,
+                ],
+                LEAD_MONTHS_COL: [1, pd.NA, 2, pd.NA],
+                "현재drop50연속개월수": [0, 0, 1, 0],
+                "모델": "Prevalence",
+                "예측확률": 0.5,
+            }
+        )
+
+        metrics = evaluate_scored_rows(scored, top_fractions=(0.5,))
+
+        self.assertTrue(pd.isna(metrics.iloc[0]["Recall_at_K"]))
+        self.assertTrue(pd.isna(metrics.iloc[0]["Lift_at_K"]))
+        self.assertTrue(pd.isna(metrics.iloc[0]["사건Recall_at_K"]))
+        lift = build_lift_table(scored, n_bins=2)
+        self.assertEqual(len(lift), 1)
+        self.assertEqual(lift.iloc[0]["Lift"], 1.0)
+
     def test_top_half_metrics_and_event_recall(self):
         scored = pd.DataFrame(
             {
@@ -282,6 +310,7 @@ class BaselineRunnerTest(unittest.TestCase):
                 raw_activity_panel("C2"),
                 raw_activity_panel("C3", "2025-05"),
                 raw_activity_panel("C4"),
+                raw_activity_panel("C5").iloc[:-1],
             ],
             ignore_index=True,
         )
@@ -293,6 +322,7 @@ class BaselineRunnerTest(unittest.TestCase):
             paths = run_baseline(input_path, root / "outputs")
 
             metrics = pd.read_csv(paths["validation_metrics"])
+            modeling = pd.read_csv(paths["modeling_panel"])
             self.assertEqual(
                 set(metrics["모델"]),
                 {
@@ -303,6 +333,7 @@ class BaselineRunnerTest(unittest.TestCase):
             )
             self.assertTrue(paths["validation_lift"].exists())
             self.assertTrue(paths["segment_diagnostics"].exists())
+            self.assertNotIn("C5", modeling["법인ID"].astype(str).tolist())
 
 
 if __name__ == "__main__":
