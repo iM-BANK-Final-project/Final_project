@@ -106,6 +106,7 @@ Y_지속거래약화_3M70, 지속거래약화사건ID
 - `X_t`는 기준월 `t` 이하 정보만 사용한다.
 - 사후 확인용 future3 값은 feature에서 제외한다.
 - 법인별 최초 최종 양성 사건월과 그 이후 기준월은 신규 조기경고 위험집단에서 제외한다.
+- 전체 feature와 직접 약화 신호 3개를 제거한 feature를 Logistic Regression과 고정 LightGBM에서 비교한다.
 - 시간 기반 train/validation/test와 관찰창에 맞는 embargo를 사용한다.
 - PR-AUC, Top-K 사건 recall, lift와 세그먼트 안정성을 평가한다.
 - 새 Y로 실제 재학습한 결과만 기록한다.

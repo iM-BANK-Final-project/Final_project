@@ -13,5 +13,6 @@ dependencies:
   - ipykernel
   - python-dotenv
   - pip:
+      - lightgbm==4.6.0
       - fastapi
       - uvicorn[standard]

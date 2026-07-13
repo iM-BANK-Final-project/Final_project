@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import src.models.persistent_weakening_baseline as baseline_module
 from src.models.persistent_weakening_baseline import (
     FUTURE_EVENT_ID_COL,
     LEAD_MONTHS_COL,
@@ -138,6 +139,25 @@ class RollingTargetTest(unittest.TestCase):
 
 
 class PastOnlyFeatureTest(unittest.TestCase):
+    def test_ablation_removes_only_direct_signal_features(self):
+        function = getattr(
+            baseline_module,
+            "ablation_feature_columns",
+            None,
+        )
+        self.assertTrue(callable(function))
+        features = build_modeling_features(labeled_panel("2024-05"))
+        full = model_feature_columns(features)
+        ablated = function(features)
+        removed = {
+            "현재drop50",
+            "현재drop50연속개월수",
+            "YoY_ratio_핵심거래활동금액",
+        }
+
+        self.assertEqual(set(full) - set(ablated), removed)
+        self.assertEqual(len(ablated), len(full) - len(removed))
+
     def test_changing_future_values_does_not_change_anchor_features(self):
         original = labeled_panel("2024-05")
         changed = original.copy()
@@ -199,6 +219,20 @@ class PastOnlyFeatureTest(unittest.TestCase):
 
 
 class BaselineEvaluationTest(unittest.TestCase):
+    def test_fixed_lightgbm_uses_approved_parameters(self):
+        function = getattr(baseline_module, "build_fixed_lightgbm", None)
+        self.assertTrue(callable(function))
+
+        params = function().get_params()
+
+        self.assertEqual(params["n_estimators"], 300)
+        self.assertEqual(params["learning_rate"], 0.03)
+        self.assertEqual(params["num_leaves"], 15)
+        self.assertEqual(params["max_depth"], 5)
+        self.assertEqual(params["min_child_samples"], 100)
+        self.assertEqual(params["class_weight"], "balanced")
+        self.assertEqual(params["random_state"], 42)
+
     def test_constant_scores_do_not_report_arbitrary_ranking_metrics(self):
         scored = pd.DataFrame(
             {
@@ -274,6 +308,9 @@ class BaselineEvaluationTest(unittest.TestCase):
             "Prevalence",
             "CurrentSignalRule",
             "LogisticRegression",
+            "LogisticRegression_NoDirect",
+            "LightGBM",
+            "LightGBM_NoDirect",
         }
         self.assertEqual(set(scores["모델"]), expected_models)
         self.assertEqual(scores.groupby("모델").size().nunique(), 1)
@@ -337,6 +374,9 @@ class BaselineRunnerTest(unittest.TestCase):
                     "Prevalence",
                     "CurrentSignalRule",
                     "LogisticRegression",
+                    "LogisticRegression_NoDirect",
+                    "LightGBM",
+                    "LightGBM_NoDirect",
                 },
             )
             self.assertTrue(paths["validation_lift"].exists())

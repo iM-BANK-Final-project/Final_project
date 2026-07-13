@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from lightgbm import LGBMClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score
@@ -44,6 +45,13 @@ FEATURE_PREFIXES = (
     "최근12개월기울기_",
     "최근3개월활성률_",
     "최근6개월활성률_",
+)
+DIRECT_SIGNAL_FEATURES = frozenset(
+    {
+        "현재drop50",
+        "현재drop50연속개월수",
+        "YoY_ratio_핵심거래활동금액",
+    }
 )
 
 
@@ -232,6 +240,35 @@ def model_feature_columns(frame: pd.DataFrame) -> list[str]:
     return selected
 
 
+def ablation_feature_columns(frame: pd.DataFrame) -> list[str]:
+    return [
+        column
+        for column in model_feature_columns(frame)
+        if column not in DIRECT_SIGNAL_FEATURES
+    ]
+
+
+def build_fixed_lightgbm() -> LGBMClassifier:
+    return LGBMClassifier(
+        n_estimators=300,
+        learning_rate=0.03,
+        num_leaves=15,
+        max_depth=5,
+        min_child_samples=100,
+        subsample=0.8,
+        subsample_freq=1,
+        colsample_bytree=0.8,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=1,
+        deterministic=True,
+        force_col_wise=True,
+        verbosity=-1,
+    )
+
+
 def _recall_for_mask(
     top: pd.DataFrame,
     full: pd.DataFrame,
@@ -347,6 +384,7 @@ def fit_and_score_baselines(
         raise ValueError("train에 양성과 음성이 모두 필요합니다.")
 
     feature_columns = model_feature_columns(train)
+    no_direct_columns = ablation_feature_columns(train)
     base_columns = [
         "법인ID",
         "기준년월",
@@ -380,31 +418,51 @@ def fit_and_score_baselines(
     )
     outputs.append(rule)
 
-    pipeline = Pipeline(
-        [
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-            (
-                "model",
-                LogisticRegression(
-                    C=1.0,
-                    class_weight="balanced",
-                    max_iter=1000,
-                    random_state=42,
+    for model_name, columns in (
+        ("LogisticRegression", feature_columns),
+        ("LogisticRegression_NoDirect", no_direct_columns),
+    ):
+        pipeline = Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                (
+                    "model",
+                    LogisticRegression(
+                        C=1.0,
+                        class_weight="balanced",
+                        max_iter=1000,
+                        random_state=42,
+                    ),
                 ),
-            ),
-        ]
-    )
-    pipeline.fit(
-        train[feature_columns],
-        train[MODEL_TARGET_COL].astype(int),
-    )
-    logistic = base.copy()
-    logistic["모델"] = "LogisticRegression"
-    logistic["예측확률"] = pipeline.predict_proba(
-        validation[feature_columns]
-    )[:, 1]
-    outputs.append(logistic)
+            ]
+        )
+        pipeline.fit(
+            train[columns],
+            train[MODEL_TARGET_COL].astype(int),
+        )
+        logistic = base.copy()
+        logistic["모델"] = model_name
+        logistic["예측확률"] = pipeline.predict_proba(
+            validation[columns]
+        )[:, 1]
+        outputs.append(logistic)
+
+    for model_name, columns in (
+        ("LightGBM", feature_columns),
+        ("LightGBM_NoDirect", no_direct_columns),
+    ):
+        model = build_fixed_lightgbm()
+        model.fit(
+            train[columns].astype(float),
+            train[MODEL_TARGET_COL].astype(int),
+        )
+        lightgbm = base.copy()
+        lightgbm["모델"] = model_name
+        lightgbm["예측확률"] = model.predict_proba(
+            validation[columns].astype(float)
+        )[:, 1]
+        outputs.append(lightgbm)
 
     scores = pd.concat(outputs, ignore_index=True)
     return scores, evaluate_scored_rows(scores)

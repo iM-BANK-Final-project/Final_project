@@ -8,7 +8,7 @@
 
 확정된 지속거래약화 이벤트 Y를 이용해, 법인별 기준월 `t`에서 향후 3개월 안에 최종 양성 사건이 발생할지를 예측하는 누수 방지 baseline 모델을 만든다.
 
-이번 범위는 rolling 모델링 패널, 시간 분할, 고정 baseline, Logistic Regression, 평가와 누수 감사를 포함한다. LightGBM 튜닝, CRM 고객가치 결합, SHAP, 운영 임계값 최적화는 후속 단계다.
+이번 범위는 rolling 모델링 패널, 시간 분할, 고정 baseline, Logistic Regression, 직접 신호 ablation, 고정 LightGBM, 평가와 누수 감사를 포함한다. LightGBM 튜닝, CRM 고객가치 결합, SHAP, 운영 임계값 최적화는 후속 단계다.
 
 ## 2. 이벤트 Y와 모델링 Y의 분리
 
@@ -142,6 +142,14 @@ random_state = 42
 
 수치형 결측은 train 중앙값, 이후 StandardScaler를 적용한다. 범주형 feature를 추가하는 경우 train 최빈값과 `OneHotEncoder(handle_unknown="ignore")`를 사용한다. validation을 보고 파라미터를 변경하지 않는다.
 
+### 7.4 Direct-signal ablation
+
+전체 feature 세트와 `현재drop50`, `현재drop50연속개월수`, `YoY_ratio_핵심거래활동금액`을 제거한 feature 세트를 동일한 위험집단과 시간 분할에서 비교한다.
+
+### 7.5 Fixed LightGBM
+
+전체/직접신호 제거 feature 세트에 동일한 고정 LightGBM을 적용한다. `n_estimators=300`, `learning_rate=0.03`, `num_leaves=15`, `max_depth=5`, `min_child_samples=100`, `subsample=0.8`, `colsample_bytree=0.8`, `reg_alpha=0.1`, `reg_lambda=1.0`, `class_weight=balanced`, `random_state=42`를 사용하고 validation 기반 튜닝은 하지 않는다.
+
 ## 8. 평가
 
 불균형 분류이므로 accuracy를 주요 지표로 사용하지 않는다.
@@ -202,7 +210,7 @@ outputs/persistent_weakening_baseline/
 
 - rolling 모델링 Y가 정의대로 생성된다.
 - feature cutoff와 6개월 label-window purge 테스트가 통과한다.
-- 세 baseline이 동일 validation 행에서 평가된다.
+- 규칙·Logistic·LightGBM의 전체/직접신호 제거 비교가 동일 validation 행에서 평가된다.
 - validation은 모델·전처리 fit에 사용되지 않는다.
 - PR-AUC, Top-K, lift, 사건 recall 산출 계약이 테스트된다.
 - 실제 데이터 실행 결과는 위험집단 구성과 함께 기록한다.
