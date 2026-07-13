@@ -109,13 +109,21 @@ class RollingTargetTest(unittest.TestCase):
 
         self.assertNotIn("2024-05", result["기준년월"].astype(str).tolist())
 
-    def test_latest_anchor_is_june_2025(self):
+    def test_excludes_positive_event_month_and_all_later_anchors(self):
         result = build_modeling_targets(labeled_panel("2024-05"))
+
+        self.assertEqual(str(result["기준년월"].max()), "2024-04")
+        self.assertFalse(
+            result["기준년월"].ge(pd.Period("2024-05")).any()
+        )
+
+    def test_latest_anchor_is_june_2025(self):
+        result = build_modeling_targets(labeled_panel("2024-05", event_y=0))
 
         self.assertEqual(str(result["기준년월"].max()), "2025-06")
 
     def test_split_has_six_month_label_window_purge(self):
-        result = build_modeling_targets(labeled_panel("2024-05"))
+        result = build_modeling_targets(labeled_panel("2024-05", event_y=0))
 
         train, validation = split_train_validation(result)
 

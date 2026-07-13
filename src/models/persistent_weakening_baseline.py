@@ -77,6 +77,11 @@ def build_modeling_targets(label_panel: pd.DataFrame) -> pd.DataFrame:
             group[TARGET_COL].eq(1),
             ["기준년월", EVENT_ID_COL],
         ].sort_values("기준년월")
+        first_positive_event_month = (
+            positive_events.iloc[0]["기준년월"]
+            if not positive_events.empty
+            else None
+        )
         for _, anchor in group.iterrows():
             month = anchor["기준년월"]
             current_event = pd.notna(anchor["core_3m_event"]) and bool(
@@ -86,6 +91,10 @@ def build_modeling_targets(label_panel: pd.DataFrame) -> pd.DataFrame:
                 month < FIRST_ANCHOR
                 or month > LAST_ANCHOR
                 or current_event
+                or (
+                    first_positive_event_month is not None
+                    and month >= first_positive_event_month
+                )
             ):
                 continue
 
