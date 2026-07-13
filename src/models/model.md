@@ -1,10 +1,8 @@
 # Persistent Transaction Weakening Modeling Definition
 
-## 1. Current Gate
+## 1. Event Label
 
-최종 이벤트 라벨은 `Y_지속거래약화_3M70`으로 확정됐다. 기존 5축 동시감소 모델은 실행을 중단한다. 새 Y는 사후 확인 라벨이므로 rolling 조기예측 target이 별도로 승인되기 전에는 모델을 재학습하거나 성능을 주장하지 않는다.
-
-## 2. Event Label Contract
+최종 이벤트 라벨은 `Y_지속거래약화_3M70`이다.
 
 ```text
 핵심거래활동금액 = 입출금활동금액 + 채널활동금액 + 카드활동금액
@@ -18,64 +16,87 @@ AND
 이벤트 이후 3개월 평균 / 이벤트 이전 12개월 평균 < 0.70
 ```
 
-3개월 연속 조건이 처음 완성된 달이 이벤트월이다. 사건 ID는 `법인ID+이벤트월`이다. 미래 관찰창 부족이나 분모 판정 불가능은 Y 결측이다.
+이 라벨은 실제 해지나 확정 휴면이 아니라 사후 확인되는 지속거래약화 proxy다.
 
-## 3. Cohort
+## 2. Baseline Modeling Status
 
 ```text
-기간 = 2023-01~2025-12
-대상 = 정확한 연속 36개월 완전관측 법인
-현재 EDA 기준 = 3,372개
-이벤트 라벨 단위 = 법인 × 이벤트월
+모델링 Y = Y_향후3개월_지속거래약화
+Train anchors = 2024-02~2024-09
+Label-window purge = 2024-10~2025-03
+Validation anchors = 2025-04~2025-06
+실제 데이터 성능 = 미측정
 ```
 
-누락 고객-월과 결측 금액을 0으로 보충하지 않는다.
+모델링 Y는 기준월 `t`의 다음 3개월인 `t+1~t+3`에 최종 양성 이벤트가 하나 이상 존재하는지 나타낸다. 현재 `core_3m_event=1` 기준월은 신규 조기경고 모집단에서 제외한다.
+
+마지막 train 기준월의 라벨은 최대 `t+6`까지 사용해 확정되므로 train과 validation 사이에 6개월 label-window purge를 둔다. purge 월의 원천 거래는 validation의 과거 feature를 만들 때 사용할 수 있지만 별도 기준월 행으로 학습하거나 평가하지 않는다.
+
+## 3. Baselines
+
+비교 모델은 다음 세 가지다.
+
+```text
+Prevalence = train 양성률을 모든 행에 동일하게 부여
+CurrentSignalRule = 현재 YoY와 drop50 연속기간의 고정 규칙 점수
+LogisticRegression = train-only 전처리와 고정 하이퍼파라미터
+```
+
+Logistic Regression은 `C=1.0`, `class_weight=balanced`, `max_iter=1000`, `random_state=42`를 사용한다. validation을 보고 파라미터를 변경하지 않는다.
 
 ## 4. Feature Boundary
 
-향후 예측 모델은 기준월 `t` 이하 정보만 feature로 사용한다. 다음 사후 확인 열은 feature에서 반드시 제외한다.
+핵심거래·입출금·채널·카드에 대해 현재값, 1개월 변화율, YoY, 최근 3·6개월 평균·표준편차·활성률, 최근 3개월/이전 6개월 비율, 3·6·12개월 기울기를 만든다. 모든 rolling 계산은 법인별로 분리하고 기준월 `t`까지만 사용한다.
+
+다음 열은 모델 feature에서 제외한다.
 
 ```text
+Y_지속거래약화_3M70
+Y_향후3개월_지속거래약화
 이벤트이후3개월평균
 future3_to_baseline
-Y_지속거래약화_3M70
+미래지속거래약화사건월
+미래지속거래약화사건ID
+지속거래약화사건ID
+label_end
 ```
 
-수신, 여신, 외환, 자동이체, 상품관계폭과 고객 프로필은 Y 판정축이 아니지만 과거 시점 정보에 한해 예측 feature 또는 원인 설명축으로 검토할 수 있다.
+결측 대체와 StandardScaler는 train에만 fit하고 validation에는 transform만 적용한다.
 
-## 5. Rolling Prediction Target Pending
-
-다음 항목은 아직 확정되지 않았다.
-
-- 기준월 `t`에서 예측할 미래 사건창
-- 이미 약화 중인 법인의 제외 또는 cooldown 규칙
-- 학습 가능 기준월과 시간 embargo 길이
-- 운영 Top-K와 RM 업무량
-
-이 계약이 승인된 후 Logistic Regression, LightGBM 및 해석 가능한 규칙 baseline을 새로 학습한다.
-
-## 6. Evaluation
+## 5. Evaluation
 
 - PR-AUC
-- Top-K 사건 recall
-- 점수 구간별 lift
-- 업종·지역·등급·전담여부별 안정성
-- 기간별 안정성과 이상치 민감도
-- 미래 정보 누수 자동 검사
+- Recall·Precision·Lift@상위 5%, 10%, 20%
+- `법인ID+이벤트월` 기준 사건 recall
+- 사건까지 1·2·3개월 리드타임별 recall
+- 현재 drop50 연속기간이 0인 고객의 recall
+- 점수 구간별 양성률과 lift
+- validation 월별 양성률과 평균 점수
 
-과거 Y로 계산한 성능은 새 Y의 성능으로 재사용하지 않는다.
+validation은 최종 시간 외 holdout으로 취급한다. 실제 데이터가 없는 현재 합성 테스트 결과를 프로젝트 성능으로 사용하지 않는다.
 
-## 7. Output Contract Pending Retraining
+## 6. Run
 
-향후 검증된 모델은 다음 운영 필드를 제공한다.
-
-```text
-법인ID
-기준년월
-지속거래약화확률
-금융관계약화위험
-조기관리대상여부
-주요약화원인
+```bash
+python -m src.models.run_persistent_weakening_baseline \
+  --input /path/to/corporate_monthly.csv \
+  --output-dir outputs/persistent_weakening_baseline
 ```
 
-고객가치 결합과 CRM 순위는 모델 검증 이후 별도 단계에서 계산한다.
+출력:
+
+```text
+modeling_panel.csv
+validation_scores.csv
+validation_metrics.csv
+validation_lift.csv
+segment_diagnostics.csv
+```
+
+구현 파일:
+
+```text
+src/models/persistent_weakening_baseline.py
+src/models/run_persistent_weakening_baseline.py
+tests/test_persistent_weakening_modeling.py
+```

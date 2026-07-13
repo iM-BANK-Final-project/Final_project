@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
@@ -6,12 +8,18 @@ from src.models.persistent_weakening_baseline import (
     FUTURE_EVENT_ID_COL,
     LEAD_MONTHS_COL,
     MODEL_TARGET_COL,
+    build_lift_table,
     build_modeling_features,
     build_modeling_targets,
     evaluate_scored_rows,
     fit_and_score_baselines,
     model_feature_columns,
     split_train_validation,
+)
+from src.models.run_persistent_weakening_baseline import (
+    OUTPUT_FILENAMES,
+    run_baseline,
+    write_baseline_outputs,
 )
 
 
@@ -42,6 +50,40 @@ def labeled_panel(event_month="2024-05", event_y=1, customer_id="C1"):
     panel.loc[event, "Y_지속거래약화_3M70"] = event_y
     panel.loc[event, "지속거래약화사건ID"] = f"{customer_id}+{event_month}"
     return panel
+
+
+def raw_activity_panel(customer_id, event_month=None):
+    months = pd.period_range("2023-01", "2025-12", freq="M")
+    core_values = [100.0] * len(months)
+    if event_month is not None:
+        event_index = months.get_loc(pd.Period(event_month))
+        core_values[event_index - 2 : event_index + 1] = [49.0, 49.0, 49.0]
+        core_values[event_index + 1 : event_index + 4] = [40.0, 40.0, 40.0]
+    amount_columns = [
+        "요구불입금금액",
+        "요구불출금금액",
+        "창구거래금액",
+        "인터넷뱅킹거래금액",
+        "스마트뱅킹거래금액",
+        "폰뱅킹거래금액",
+        "ATM거래금액",
+        "신용카드사용금액",
+        "체크카드사용금액",
+    ]
+    rows = []
+    for month, core_value in zip(months, core_values):
+        row = {
+            "법인ID": customer_id,
+            "기준년월": int(month.strftime("%Y%m")),
+        }
+        row.update(
+            {
+                column: core_value / len(amount_columns)
+                for column in amount_columns
+            }
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 class RollingTargetTest(unittest.TestCase):
@@ -201,6 +243,66 @@ class BaselineEvaluationTest(unittest.TestCase):
         self.assertEqual(scores.groupby("모델").size().nunique(), 1)
         self.assertEqual(set(metrics["모델"]), expected_models)
         self.assertTrue(scores["예측확률"].notna().all())
+
+    def test_lift_table_uses_highest_scores_as_first_bucket(self):
+        scores = pd.DataFrame(
+            {
+                "모델": "rule",
+                MODEL_TARGET_COL: [1, 1, 0, 0],
+                "예측확률": [0.9, 0.8, 0.2, 0.1],
+            }
+        )
+
+        lift = build_lift_table(scores, n_bins=2)
+
+        first = lift.loc[lift["점수구간"].eq(1)].iloc[0]
+        self.assertEqual(first["행수"], 2)
+        self.assertEqual(first["양성률"], 1.0)
+        self.assertEqual(first["Lift"], 2.0)
+
+
+class BaselineRunnerTest(unittest.TestCase):
+    def test_writes_all_output_contract_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            frames = {
+                name: pd.DataFrame({"value": [1]})
+                for name in OUTPUT_FILENAMES
+            }
+
+            paths = write_baseline_outputs(frames, output_dir)
+
+            self.assertEqual(set(paths), set(OUTPUT_FILENAMES))
+            self.assertTrue(all(path.exists() for path in paths.values()))
+
+    def test_runs_from_raw_csv_through_validation_outputs(self):
+        source = pd.concat(
+            [
+                raw_activity_panel("C1", "2024-05"),
+                raw_activity_panel("C2"),
+                raw_activity_panel("C3", "2025-05"),
+                raw_activity_panel("C4"),
+            ],
+            ignore_index=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "corporate.csv"
+            source.to_csv(input_path, index=False)
+
+            paths = run_baseline(input_path, root / "outputs")
+
+            metrics = pd.read_csv(paths["validation_metrics"])
+            self.assertEqual(
+                set(metrics["모델"]),
+                {
+                    "Prevalence",
+                    "CurrentSignalRule",
+                    "LogisticRegression",
+                },
+            )
+            self.assertTrue(paths["validation_lift"].exists())
+            self.assertTrue(paths["segment_diagnostics"].exists())
 
 
 if __name__ == "__main__":

@@ -390,3 +390,36 @@ def fit_and_score_baselines(
 
     scores = pd.concat(outputs, ignore_index=True)
     return scores, evaluate_scored_rows(scores)
+
+
+def build_lift_table(
+    scores: pd.DataFrame,
+    n_bins: int = 10,
+) -> pd.DataFrame:
+    _require_columns(scores, ("모델", MODEL_TARGET_COL, "예측확률"))
+    if n_bins < 1:
+        raise ValueError("n_bins는 1 이상이어야 합니다.")
+    rows: list[pd.DataFrame] = []
+    for model_name, group in scores.groupby("모델", sort=False):
+        work = group.copy()
+        rank = work["예측확률"].rank(method="first", ascending=False)
+        work["점수구간"] = np.ceil(rank / len(work) * n_bins).astype(int)
+        base_rate = float(work[MODEL_TARGET_COL].mean())
+        summary = (
+            work.groupby("점수구간", as_index=False)
+            .agg(
+                행수=(MODEL_TARGET_COL, "size"),
+                양성수=(MODEL_TARGET_COL, "sum"),
+                양성률=(MODEL_TARGET_COL, "mean"),
+                최소점수=("예측확률", "min"),
+                최대점수=("예측확률", "max"),
+            )
+            .sort_values("점수구간")
+        )
+        summary.insert(0, "모델", model_name)
+        summary["전체양성률"] = base_rate
+        summary["Lift"] = (
+            summary["양성률"] / base_rate if base_rate else np.nan
+        )
+        rows.append(summary)
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
