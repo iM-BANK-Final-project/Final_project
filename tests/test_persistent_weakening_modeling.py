@@ -3,8 +3,11 @@ import unittest
 import pandas as pd
 
 from src.models.persistent_weakening_baseline import (
+    FUTURE_EVENT_ID_COL,
     MODEL_TARGET_COL,
+    build_modeling_features,
     build_modeling_targets,
+    model_feature_columns,
     split_train_validation,
 )
 
@@ -79,6 +82,67 @@ class RollingTargetTest(unittest.TestCase):
             train["label_end"].max(),
             validation["기준년월"].min(),
         )
+
+
+class PastOnlyFeatureTest(unittest.TestCase):
+    def test_changing_future_values_does_not_change_anchor_features(self):
+        original = labeled_panel("2024-05")
+        changed = original.copy()
+        changed.loc[
+            changed["기준년월"].gt(pd.Period("2024-02")),
+            [
+                "핵심거래활동금액",
+                "입출금활동금액",
+                "채널활동금액",
+                "카드활동금액",
+            ],
+        ] = 999999.0
+
+        before_frame = build_modeling_features(original)
+        after_frame = build_modeling_features(changed)
+        feature_columns = model_feature_columns(before_frame)
+        before = before_frame.set_index(["법인ID", "기준년월"]).loc[
+            ("C1", pd.Period("2024-02")), feature_columns
+        ]
+        after = after_frame.set_index(["법인ID", "기준년월"]).loc[
+            ("C1", pd.Period("2024-02")), feature_columns
+        ]
+
+        pd.testing.assert_series_equal(before, after)
+
+    def test_forbidden_columns_are_not_model_features(self):
+        features = build_modeling_features(labeled_panel("2024-05"))
+
+        selected = model_feature_columns(features)
+
+        forbidden = {
+            "Y_지속거래약화_3M70",
+            MODEL_TARGET_COL,
+            "이벤트이후3개월평균",
+            "future3_to_baseline",
+            FUTURE_EVENT_ID_COL,
+        }
+        self.assertTrue(forbidden.isdisjoint(selected))
+
+    def test_customer_rolling_features_do_not_mix_customers(self):
+        first = labeled_panel("2024-05", customer_id="C1")
+        second = labeled_panel("2025-05", customer_id="C2")
+        second["핵심거래활동금액"] = 10000.0
+
+        combined = build_modeling_features(
+            pd.concat([first, second], ignore_index=True)
+        )
+        single = build_modeling_features(first)
+        feature_columns = model_feature_columns(single)
+        combined_first = combined.loc[
+            combined["법인ID"].eq("C1"),
+            ["기준년월", *feature_columns],
+        ].reset_index(drop=True)
+        single_first = single[["기준년월", *feature_columns]].reset_index(
+            drop=True
+        )
+
+        pd.testing.assert_frame_equal(combined_first, single_first)
 
 
 if __name__ == "__main__":

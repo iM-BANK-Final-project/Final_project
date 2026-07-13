@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from src.preprocessing.persistent_transaction_weakening_labels import (
@@ -20,6 +21,25 @@ TRAIN_START = pd.Period("2024-02", freq="M")
 TRAIN_END = pd.Period("2024-09", freq="M")
 VALIDATION_START = pd.Period("2025-04", freq="M")
 VALIDATION_END = pd.Period("2025-06", freq="M")
+
+FEATURE_AXES = (
+    "핵심거래활동금액",
+    "입출금활동금액",
+    "채널활동금액",
+    "카드활동금액",
+)
+FEATURE_PREFIXES = (
+    "log1p_현재값_",
+    "1개월변화율_",
+    "YoY_ratio_",
+    "log1p_최근",
+    "최근3개월_이전6개월비율_",
+    "최근3개월기울기_",
+    "최근6개월기울기_",
+    "최근12개월기울기_",
+    "최근3개월활성률_",
+    "최근6개월활성률_",
+)
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
@@ -98,3 +118,101 @@ def split_train_validation(
     if train[LABEL_END_COL].max() >= validation["기준년월"].min():
         raise ValueError("train label 관찰창과 validation 기준월이 겹칩니다.")
     return train, validation
+
+
+def _slope(values: pd.Series) -> float:
+    clean = values.dropna().to_numpy(dtype=float)
+    if len(clean) < 2:
+        return np.nan
+    return float(np.polyfit(np.arange(len(clean)), clean, 1)[0])
+
+
+def build_modeling_features(label_panel: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(
+        label_panel,
+        ("법인ID", "기준년월", *FEATURE_AXES, "drop50", "drop50_연속개월수"),
+    )
+    monthly = label_panel.sort_values(["법인ID", "기준년월"]).copy()
+    engineered = monthly[["법인ID", "기준년월"]].copy()
+
+    for axis in FEATURE_AXES:
+        values = pd.to_numeric(monthly[axis], errors="coerce")
+        grouped = values.groupby(monthly["법인ID"], sort=False)
+        prior_year = grouped.shift(12)
+        engineered[f"log1p_현재값_{axis}"] = np.log1p(values)
+        engineered[f"1개월변화율_{axis}"] = grouped.pct_change(
+            fill_method=None
+        ).replace([np.inf, -np.inf], np.nan)
+        engineered[f"YoY_ratio_{axis}"] = values.div(
+            prior_year.where(prior_year.gt(0))
+        )
+
+        for window in (3, 6):
+            mean = grouped.transform(
+                lambda series, size=window: series.rolling(
+                    size,
+                    min_periods=size,
+                ).mean()
+            )
+            std = grouped.transform(
+                lambda series, size=window: series.rolling(
+                    size,
+                    min_periods=size,
+                ).std()
+            )
+            active = grouped.transform(
+                lambda series, size=window: series.gt(0).rolling(
+                    size,
+                    min_periods=size,
+                ).mean()
+            )
+            engineered[f"log1p_최근{window}개월평균_{axis}"] = np.log1p(mean)
+            engineered[f"log1p_최근{window}개월표준편차_{axis}"] = np.log1p(std)
+            engineered[f"최근{window}개월활성률_{axis}"] = active
+
+        recent3 = grouped.transform(
+            lambda series: series.rolling(3, min_periods=3).mean()
+        )
+        previous6 = grouped.transform(
+            lambda series: series.shift(3).rolling(6, min_periods=6).mean()
+        )
+        engineered[f"최근3개월_이전6개월비율_{axis}"] = recent3.div(
+            previous6.where(previous6.gt(0))
+        )
+        for window in (3, 6, 12):
+            engineered[f"최근{window}개월기울기_{axis}"] = grouped.transform(
+                lambda series, size=window: series.rolling(
+                    size,
+                    min_periods=size,
+                ).apply(_slope, raw=False)
+            )
+
+    engineered["현재drop50"] = monthly["drop50"].astype("Float64")
+    engineered["현재drop50연속개월수"] = pd.to_numeric(
+        monthly["drop50_연속개월수"],
+        errors="coerce",
+    )
+    targets = build_modeling_targets(label_panel)
+    return targets.merge(
+        engineered,
+        on=["법인ID", "기준년월"],
+        how="left",
+        validate="one_to_one",
+    )
+
+
+def model_feature_columns(frame: pd.DataFrame) -> list[str]:
+    selected = [
+        column
+        for column in frame.columns
+        if column.startswith(FEATURE_PREFIXES)
+        or column in {"현재drop50", "현재drop50연속개월수"}
+    ]
+    non_numeric = [
+        column
+        for column in selected
+        if not pd.api.types.is_numeric_dtype(frame[column])
+    ]
+    if non_numeric:
+        raise ValueError(f"수치형 feature가 아닌 컬럼이 있습니다: {non_numeric}")
+    return selected
