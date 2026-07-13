@@ -4,9 +4,12 @@ import pandas as pd
 
 from src.models.persistent_weakening_baseline import (
     FUTURE_EVENT_ID_COL,
+    LEAD_MONTHS_COL,
     MODEL_TARGET_COL,
     build_modeling_features,
     build_modeling_targets,
+    evaluate_scored_rows,
+    fit_and_score_baselines,
     model_feature_columns,
     split_train_validation,
 )
@@ -143,6 +146,61 @@ class PastOnlyFeatureTest(unittest.TestCase):
         )
 
         pd.testing.assert_frame_equal(combined_first, single_first)
+
+
+class BaselineEvaluationTest(unittest.TestCase):
+    def test_top_half_metrics_and_event_recall(self):
+        scored = pd.DataFrame(
+            {
+                "법인ID": ["A", "B", "C", "D"],
+                "기준년월": [pd.Period("2025-04")] * 4,
+                MODEL_TARGET_COL: [1, 0, 1, 0],
+                FUTURE_EVENT_ID_COL: [
+                    "A+2025-05",
+                    pd.NA,
+                    "C+2025-06",
+                    pd.NA,
+                ],
+                LEAD_MONTHS_COL: [1, pd.NA, 2, pd.NA],
+                "현재drop50연속개월수": [0, 0, 1, 0],
+                "모델": "rule",
+                "예측확률": [0.9, 0.8, 0.7, 0.1],
+            }
+        )
+
+        metrics = evaluate_scored_rows(scored, top_fractions=(0.5,))
+
+        row = metrics.iloc[0]
+        self.assertEqual(row["Recall_at_K"], 0.5)
+        self.assertEqual(row["Precision_at_K"], 0.5)
+        self.assertEqual(row["Lift_at_K"], 1.0)
+        self.assertEqual(row["사건Recall_at_K"], 0.5)
+        self.assertEqual(row["Lead1_Recall_at_K"], 1.0)
+        self.assertEqual(row["Lead2_Recall_at_K"], 0.0)
+        self.assertEqual(row["현재무감소_Recall_at_K"], 1.0)
+
+    def test_three_baselines_return_same_validation_rows(self):
+        panels = pd.concat(
+            [
+                labeled_panel("2024-05", customer_id="C1"),
+                labeled_panel("2025-05", customer_id="C2"),
+            ],
+            ignore_index=True,
+        )
+        frame = build_modeling_features(panels)
+        train, validation = split_train_validation(frame)
+
+        scores, metrics = fit_and_score_baselines(train, validation)
+
+        expected_models = {
+            "Prevalence",
+            "CurrentSignalRule",
+            "LogisticRegression",
+        }
+        self.assertEqual(set(scores["모델"]), expected_models)
+        self.assertEqual(scores.groupby("모델").size().nunique(), 1)
+        self.assertEqual(set(metrics["모델"]), expected_models)
+        self.assertTrue(scores["예측확률"].notna().all())
 
 
 if __name__ == "__main__":

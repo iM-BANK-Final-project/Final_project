@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from src.preprocessing.persistent_transaction_weakening_labels import (
     EVENT_ID_COL,
@@ -216,3 +221,172 @@ def model_feature_columns(frame: pd.DataFrame) -> list[str]:
     if non_numeric:
         raise ValueError(f"수치형 feature가 아닌 컬럼이 있습니다: {non_numeric}")
     return selected
+
+
+def _recall_for_mask(
+    top: pd.DataFrame,
+    full: pd.DataFrame,
+    mask: pd.Series,
+) -> float:
+    denominator = int(mask.sum())
+    if denominator == 0:
+        return np.nan
+    eligible_keys = set(full.index[mask])
+    return len(eligible_keys.intersection(top.index)) / denominator
+
+
+def evaluate_scored_rows(
+    scored: pd.DataFrame,
+    top_fractions: tuple[float, ...] = (0.05, 0.10, 0.20),
+) -> pd.DataFrame:
+    _require_columns(
+        scored,
+        (
+            MODEL_TARGET_COL,
+            FUTURE_EVENT_ID_COL,
+            LEAD_MONTHS_COL,
+            "현재drop50연속개월수",
+            "모델",
+            "예측확률",
+        ),
+    )
+    rows: list[dict[str, object]] = []
+    for model_name, group in scored.groupby("모델", sort=False):
+        group = group.copy()
+        positives = int(group[MODEL_TARGET_COL].sum())
+        base_rate = float(group[MODEL_TARGET_COL].mean())
+        total_events = group[FUTURE_EVENT_ID_COL].dropna().nunique()
+        pr_auc = (
+            average_precision_score(
+                group[MODEL_TARGET_COL],
+                group["예측확률"],
+            )
+            if positives
+            else np.nan
+        )
+        for fraction in top_fractions:
+            if not 0 < fraction <= 1:
+                raise ValueError("top fraction은 0보다 크고 1 이하여야 합니다.")
+            count = max(1, int(np.ceil(len(group) * fraction)))
+            top = group.nlargest(count, "예측확률")
+            captured = int(top[MODEL_TARGET_COL].sum())
+            captured_events = top[FUTURE_EVENT_ID_COL].dropna().nunique()
+            precision = captured / count
+            positive_mask = group[MODEL_TARGET_COL].eq(1)
+            no_current_drop_mask = positive_mask & group[
+                "현재drop50연속개월수"
+            ].eq(0)
+            row: dict[str, object] = {
+                "모델": model_name,
+                "K": fraction,
+                "알림수": count,
+                "PR_AUC": pr_auc,
+                "Recall_at_K": captured / positives if positives else np.nan,
+                "Precision_at_K": precision,
+                "Lift_at_K": precision / base_rate if base_rate else np.nan,
+                "사건Recall_at_K": (
+                    captured_events / total_events if total_events else np.nan
+                ),
+                "현재무감소_Recall_at_K": _recall_for_mask(
+                    top,
+                    group,
+                    no_current_drop_mask,
+                ),
+            }
+            for lead in (1, 2, 3):
+                lead_mask = positive_mask & group[LEAD_MONTHS_COL].eq(lead)
+                row[f"Lead{lead}_Recall_at_K"] = _recall_for_mask(
+                    top,
+                    group,
+                    lead_mask,
+                )
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def fit_and_score_baselines(
+    train: pd.DataFrame,
+    validation: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    _require_columns(
+        train,
+        (MODEL_TARGET_COL,),
+    )
+    _require_columns(
+        validation,
+        (
+            "법인ID",
+            "기준년월",
+            MODEL_TARGET_COL,
+            FUTURE_EVENT_ID_COL,
+            LEAD_MONTHS_COL,
+            "현재drop50연속개월수",
+            "핵심거래_YoY_ratio",
+            "drop50_연속개월수",
+        ),
+    )
+    if train[MODEL_TARGET_COL].nunique() < 2:
+        raise ValueError("train에 양성과 음성이 모두 필요합니다.")
+
+    feature_columns = model_feature_columns(train)
+    base_columns = [
+        "법인ID",
+        "기준년월",
+        MODEL_TARGET_COL,
+        FUTURE_EVENT_ID_COL,
+        LEAD_MONTHS_COL,
+        "현재drop50연속개월수",
+    ]
+    base = validation[base_columns].copy()
+    outputs: list[pd.DataFrame] = []
+
+    prevalence = base.copy()
+    prevalence["모델"] = "Prevalence"
+    prevalence["예측확률"] = float(train[MODEL_TARGET_COL].mean())
+    outputs.append(prevalence)
+
+    rule = base.copy()
+    yoy = pd.to_numeric(
+        validation["핵심거래_YoY_ratio"],
+        errors="coerce",
+    ).fillna(1.0)
+    current_streak = pd.to_numeric(
+        validation["drop50_연속개월수"],
+        errors="coerce",
+    ).fillna(0)
+    rule["모델"] = "CurrentSignalRule"
+    rule["예측확률"] = (
+        2 * current_streak.clip(upper=2)
+        + yoy.lt(0.70).astype(int)
+        + (1 - yoy).clip(lower=0)
+    )
+    outputs.append(rule)
+
+    pipeline = Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+            (
+                "model",
+                LogisticRegression(
+                    C=1.0,
+                    class_weight="balanced",
+                    max_iter=1000,
+                    random_state=42,
+                ),
+            ),
+        ]
+    )
+    pipeline.fit(
+        train[feature_columns],
+        train[MODEL_TARGET_COL].astype(int),
+    )
+    logistic = base.copy()
+    logistic["모델"] = "LogisticRegression"
+    logistic["예측확률"] = pipeline.predict_proba(
+        validation[feature_columns]
+    )[:, 1]
+    outputs.append(logistic)
+
+    scores = pd.concat(outputs, ignore_index=True)
+    return scores, evaluate_scored_rows(scores)
