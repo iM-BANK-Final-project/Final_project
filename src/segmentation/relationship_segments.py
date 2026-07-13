@@ -6,6 +6,16 @@ import numpy as np
 import pandas as pd
 
 
+SEGMENT_ORDER = (
+    "저관계",
+    "균형·중간관계",
+    "거래활동중심",
+    "수신중심",
+    "여신중심",
+    "복합고관계",
+)
+
+
 @dataclass(frozen=True)
 class SegmentationConfig:
     customer_id_col: str = "법인ID"
@@ -181,3 +191,132 @@ def summarize_relationship_window(
         .sort_values(config.customer_id_col)
         .reset_index(drop=True)
     )
+
+
+def _validate_relationship_levels(
+    levels: pd.DataFrame,
+    config: SegmentationConfig,
+) -> pd.DataFrame:
+    _require_columns(
+        levels,
+        (config.customer_id_col, *config.level_columns),
+    )
+    work = levels.copy()
+    numeric = work.loc[:, config.level_columns].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+    if numeric.isna().any().any():
+        raise ValueError("관계수준에 결측 또는 비수치 값이 있습니다.")
+    work.loc[:, config.level_columns] = numeric
+    return work
+
+
+def fit_reference_scores(
+    levels: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    config = config or SegmentationConfig()
+    scored = _validate_relationship_levels(levels, config)
+    if scored.empty:
+        raise ValueError("기준분포를 만들 관계수준이 없습니다.")
+    for level_column, score_column in config.level_score_pairs:
+        scored[score_column] = scored[level_column].rank(
+            method="average",
+            pct=True,
+        )
+    reference = scored.loc[
+        :, [config.customer_id_col, *config.level_columns]
+    ].copy()
+    return scored, reference
+
+
+def _score_one_axis(
+    values: np.ndarray,
+    reference_values: np.ndarray,
+) -> np.ndarray:
+    reference_sorted = np.sort(reference_values.astype(float))
+    if reference_sorted.size == 0:
+        raise ValueError("고정 percentile 기준분포가 비어 있습니다.")
+    values = values.astype(float)
+    left = np.searchsorted(reference_sorted, values, side="left")
+    right = np.searchsorted(reference_sorted, values, side="right")
+    count = float(reference_sorted.size)
+    scores = right.astype(float) / count
+    tied = right > left
+    scores[tied] = (left[tied] + right[tied] + 1.0) / (2.0 * count)
+    return np.clip(scores, 0.0, 1.0)
+
+
+def score_against_reference(
+    levels: pd.DataFrame,
+    reference: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> pd.DataFrame:
+    config = config or SegmentationConfig()
+    scored = _validate_relationship_levels(levels, config)
+    reference_work = _validate_relationship_levels(reference, config)
+    if reference_work.empty:
+        raise ValueError("고정 percentile 기준분포가 비어 있습니다.")
+    for level_column, score_column in config.level_score_pairs:
+        scored[score_column] = _score_one_axis(
+            scored[level_column].to_numpy(dtype=float),
+            reference_work[level_column].to_numpy(dtype=float),
+        )
+    return scored
+
+
+def assign_l30_h70_m15(
+    scored: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> pd.DataFrame:
+    config = config or SegmentationConfig()
+    _require_columns(
+        scored,
+        (config.customer_id_col, *config.score_columns),
+    )
+    result = scored.copy()
+    scores = result.loc[:, config.score_columns].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+    if scores.isna().any().any():
+        raise ValueError("관계점수에 결측 또는 비수치 값이 있습니다.")
+    if scores.lt(0).any().any() or scores.gt(1).any().any():
+        raise ValueError("관계점수는 0과 1 사이여야 합니다.")
+
+    low = scores.le(config.low_cut).all(axis=1)
+    high = scores.ge(config.high_cut).sum(axis=1).ge(2)
+    ordered = np.sort(scores.to_numpy(dtype=float), axis=1)
+    score_margin = ordered[:, -1] - ordered[:, -2]
+    dominant = score_margin >= config.dominance_margin - 1e-12
+
+    labels = np.full(len(result), "균형·중간관계", dtype=object)
+    labels[low.to_numpy()] = "저관계"
+    labels[(~low & high).to_numpy()] = "복합고관계"
+
+    remaining = ~(low | high) & dominant
+    winners = scores.idxmax(axis=1).map(
+        {
+            "거래활동점수": "거래활동중심",
+            "수신관계점수": "수신중심",
+            "여신관계점수": "여신중심",
+        }
+    )
+    labels[remaining.to_numpy()] = winners.loc[remaining].to_numpy()
+    result.loc[:, config.score_columns] = scores
+    result["관계세그먼트"] = labels
+    return result
+
+
+def build_segment_profile(assignments: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(assignments, ("관계세그먼트",))
+    invalid = set(assignments["관계세그먼트"].dropna()) - set(SEGMENT_ORDER)
+    if invalid:
+        raise ValueError(f"정의되지 않은 관계세그먼트가 있습니다: {sorted(invalid)}")
+    counts = assignments["관계세그먼트"].value_counts()
+    profile = counts.rename_axis("관계세그먼트").reset_index(name="법인수")
+    profile["비율"] = profile["법인수"].div(len(assignments))
+    order = {segment: index for index, segment in enumerate(SEGMENT_ORDER)}
+    profile["_order"] = profile["관계세그먼트"].map(order)
+    return profile.sort_values("_order").drop(columns="_order").reset_index(drop=True)

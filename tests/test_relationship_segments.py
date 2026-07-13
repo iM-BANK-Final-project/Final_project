@@ -7,7 +7,11 @@ import pandas as pd
 
 from src.segmentation.relationship_segments import (
     SegmentationConfig,
+    assign_l30_h70_m15,
     build_monthly_relationship_axes,
+    build_segment_profile,
+    fit_reference_scores,
+    score_against_reference,
     summarize_relationship_window,
 )
 
@@ -33,6 +37,32 @@ def make_monthly_source(
                 )
                 rows.append(row)
     return pd.DataFrame(rows)
+
+
+def level_frame(
+    activity: list[float],
+    deposit: list[float],
+    loan: list[float],
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "법인ID": [f"C{index}" for index in range(len(activity))],
+            "거래활동관계수준": activity,
+            "수신관계수준": deposit,
+            "여신관계수준": loan,
+        }
+    )
+
+
+def score_frame(values: list[tuple[float, float, float]]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "법인ID": [f"C{index}" for index in range(len(values))],
+            "거래활동점수": [value[0] for value in values],
+            "수신관계점수": [value[1] for value in values],
+            "여신관계점수": [value[2] for value in values],
+        }
+    )
 
 
 class RelationshipLevelTests(unittest.TestCase):
@@ -99,6 +129,85 @@ class RelationshipLevelTests(unittest.TestCase):
                 "2023-01",
                 "2023-12",
             )
+
+
+class SegmentRuleTests(unittest.TestCase):
+    def test_reference_scores_use_average_percentile_for_ties(self):
+        levels = level_frame(
+            activity=[0, 0, 10, 20],
+            deposit=[0, 1, 2, 3],
+            loan=[0, 1, 2, 3],
+        )
+
+        scored, reference = fit_reference_scores(levels)
+        rescored = score_against_reference(levels, reference)
+
+        self.assertEqual(
+            scored["거래활동점수"].tolist(),
+            [0.375, 0.375, 0.75, 1.0],
+        )
+        pd.testing.assert_series_equal(
+            scored["거래활동점수"],
+            rescored["거래활동점수"],
+            check_names=False,
+        )
+
+    def test_future_scores_use_frozen_reference_distribution(self):
+        reference_levels = level_frame(
+            activity=[1, 2, 3, 4],
+            deposit=[1, 2, 3, 4],
+            loan=[1, 2, 3, 4],
+        )
+        _, reference = fit_reference_scores(reference_levels)
+        future = level_frame(
+            activity=[0, 2.5, 5],
+            deposit=[0, 2.5, 5],
+            loan=[0, 2.5, 5],
+        )
+
+        scored = score_against_reference(future, reference)
+
+        self.assertEqual(
+            scored["거래활동점수"].tolist(),
+            [0.0, 0.5, 1.0],
+        )
+
+    def test_assigns_all_six_segments_with_priority_and_inclusive_edges(self):
+        scored = score_frame(
+            [
+                (0.30, 0.30, 0.30),
+                (0.85, 0.70, 0.10),
+                (0.65, 0.40, 0.20),
+                (0.20, 0.55, 0.40),
+                (0.20, 0.35, 0.50),
+                (0.50, 0.40, 0.35),
+            ]
+        )
+
+        result = assign_l30_h70_m15(scored)
+
+        self.assertEqual(
+            result["관계세그먼트"].tolist(),
+            [
+                "저관계",
+                "복합고관계",
+                "거래활동중심",
+                "수신중심",
+                "여신중심",
+                "균형·중간관계",
+            ],
+        )
+
+    def test_profile_counts_and_shares_are_auditable(self):
+        assigned = assign_l30_h70_m15(
+            score_frame([(0.1, 0.1, 0.1), (0.9, 0.8, 0.1)])
+        )
+
+        profile = build_segment_profile(assigned)
+
+        self.assertEqual(profile["법인수"].sum(), 2)
+        self.assertAlmostEqual(profile["비율"].sum(), 1.0)
+        self.assertEqual(set(profile["관계세그먼트"]), {"저관계", "복합고관계"})
 
 
 if __name__ == "__main__":
