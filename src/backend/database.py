@@ -1,6 +1,7 @@
 """SQLite connection, schema, and replacement helpers for the RM service."""
 
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 import sqlite3
 
@@ -173,7 +174,10 @@ def replace_database_atomically(
         connection.close()
         temporary.replace(target)
     except Exception:
-        connection.rollback()
-        connection.close()
-        temporary.unlink(missing_ok=True)
+        with suppress(Exception):
+            connection.rollback()
+        with suppress(Exception):
+            connection.close()
+        with suppress(Exception):
+            temporary.unlink(missing_ok=True)
         raise

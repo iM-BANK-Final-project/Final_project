@@ -67,3 +67,26 @@ def test_atomic_replacement_preserves_existing_database_on_failure(tmp_path):
 
     assert target.read_bytes() == b"known-good"
     assert not target.with_suffix(".sqlite.tmp").exists()
+
+
+def test_atomic_replacement_preserves_swap_error_and_cleans_temporary(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / "service.sqlite"
+    temporary = target.with_suffix(".sqlite.tmp")
+    target.write_bytes(b"known-good")
+    swap_error = OSError("swap failed")
+
+    def fail_replace(path, destination):
+        assert path == temporary
+        assert destination == target
+        raise swap_error
+
+    monkeypatch.setattr(database.Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="swap failed") as raised:
+        database.replace_database_atomically(target, lambda _connection: None)
+
+    assert raised.value is swap_error
+    assert target.read_bytes() == b"known-good"
+    assert not temporary.exists()
