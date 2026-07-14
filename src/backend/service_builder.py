@@ -28,6 +28,28 @@ VALUE_SCORE_COLUMNS = (
     "고객등급점수",
     "전담점수",
 )
+SIGNAL_SOURCE_COLUMNS = {
+    "입출금": ("요구불입금금액", "요구불출금금액"),
+    "채널": (
+        "창구거래금액",
+        "인터넷뱅킹거래금액",
+        "스마트뱅킹거래금액",
+        "폰뱅킹거래금액",
+        "ATM거래금액",
+    ),
+    "카드": ("신용카드사용금액", "체크카드사용금액"),
+}
+RECOMMENDED_ACTIONS = {
+    "입출금": "자금관리 상담, CMS, 결제성 거래 점검",
+    "채널": "디지털채널 온보딩, 이용 장애·불편 확인",
+    "카드": "법인카드 이용조건 점검, 한도·혜택 상담",
+    "복합 거래활동": "RM 직접 접촉, 관계 회복 상담",
+}
+CONTACT_STRATEGIES = {
+    "HIGH": "RM 우선 직접 접촉",
+    "MEDIUM": "RM 계획 접촉",
+    "WATCH": "모니터링 후 필요 시 접촉",
+}
 
 
 @dataclass
@@ -261,6 +283,152 @@ def _risk_level(probability: pd.Series) -> pd.Series:
     ).astype("string")
 
 
+def build_weakening_signals(
+    history: pd.DataFrame,
+    customer_ids: set[str],
+    as_of_month: str,
+) -> pd.DataFrame:
+    """Compare recent three-month activity with the preceding six months."""
+    required = ("법인ID", "기준년월", *sum(SIGNAL_SOURCE_COLUMNS.values(), ()))
+    _require_columns(history, required, "약화 신호 원천 데이터")
+    month = normalize_month(pd.Series([as_of_month])).iloc[0]
+    expected_months = pd.period_range(
+        pd.Period(month, freq="M") - 8,
+        pd.Period(month, freq="M"),
+        freq="M",
+    ).astype(str)
+
+    work = history.loc[history["법인ID"].astype(str).isin(customer_ids)].copy()
+    work["법인ID"] = work["법인ID"].astype(str)
+    work["기준년월"] = normalize_month(work["기준년월"])
+    work = work.loc[work["기준년월"].isin(expected_months)].copy()
+    if work.duplicated(["법인ID", "기준년월"], keep=False).any():
+        raise ValueError("약화 신호 원천 데이터에 법인ID+기준년월 중복이 있습니다.")
+
+    expected_index = pd.MultiIndex.from_product(
+        [sorted(customer_ids), expected_months], names=["법인ID", "기준년월"]
+    )
+    actual_index = pd.MultiIndex.from_frame(work[["법인ID", "기준년월"]])
+    if not expected_index.isin(actual_index).all():
+        raise ValueError("약화 신호 계산에는 고객별 연속 9개월 이력이 필요합니다.")
+
+    source_columns = sum(SIGNAL_SOURCE_COLUMNS.values(), ())
+    numeric = work.loc[:, source_columns].apply(pd.to_numeric, errors="coerce")
+    if numeric.isna().any().any():
+        invalid = numeric.columns[numeric.isna().any()].tolist()
+        raise ValueError(f"약화 신호 원천 금액에 결측이 있습니다: {invalid}")
+    if numeric.lt(0).any().any():
+        raise ValueError("약화 신호 원천 금액에 음수가 있습니다.")
+    work.loc[:, source_columns] = numeric
+
+    rows: list[dict[str, object]] = []
+    for customer_id, customer in work.groupby("법인ID", sort=True):
+        customer = customer.sort_values("기준년월")
+        for signal_type, columns in SIGNAL_SOURCE_COLUMNS.items():
+            monthly = customer.loc[:, columns].sum(axis=1)
+            previous = float(monthly.iloc[:6].mean())
+            recent = float(monthly.iloc[6:].mean())
+            change_rate = None if previous == 0 else (recent / previous - 1) * 100
+            rows.append(
+                {
+                    "corporate_id": customer_id,
+                    "as_of_month": month,
+                    "signal_type": signal_type,
+                    "current_value": round(recent, 2),
+                    "comparison_value": round(previous, 2),
+                    "change_rate": None if change_rate is None else round(change_rate, 2),
+                }
+            )
+
+    signals = pd.DataFrame(rows)
+    signals["signal_rank"] = signals.groupby("corporate_id")["change_rate"].rank(
+        method="min", ascending=True, na_option="bottom"
+    ).astype(int)
+    return signals
+
+
+def classify_weakening_type(signals: pd.DataFrame) -> pd.DataFrame:
+    """Classify each customer as a single or multi-axis weakening type."""
+    required = ("corporate_id", "as_of_month", "signal_type", "change_rate")
+    _require_columns(signals, required, "약화 신호")
+    rows: list[dict[str, str]] = []
+    for (customer_id, month), customer in signals.groupby(
+        ["corporate_id", "as_of_month"], sort=False
+    ):
+        comparable = customer.loc[customer["change_rate"].notna()].copy()
+        if comparable["change_rate"].le(-20.0).sum() >= 2:
+            weakening_type = "복합 거래활동"
+        elif comparable.empty:
+            weakening_type = "복합 거래활동"
+        else:
+            weakening_type = comparable.sort_values(
+                ["change_rate", "signal_type"], kind="stable"
+            ).iloc[0]["signal_type"]
+        rows.append(
+            {
+                "corporate_id": customer_id,
+                "as_of_month": month,
+                "weakening_type": weakening_type,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_recommendations(
+    snapshots: pd.DataFrame,
+    signals: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build deterministic RM copy from validated risk, segment, and signals."""
+    required = ("corporate_id", "as_of_month", "risk_probability", "segment_name")
+    _require_columns(snapshots, required, "고객 스냅샷")
+    classified = classify_weakening_type(signals)
+    recommendations = snapshots.loc[:, required].merge(
+        classified,
+        on=["corporate_id", "as_of_month"],
+        how="left",
+        validate="one_to_one",
+    )
+    if recommendations["weakening_type"].isna().any():
+        raise ValueError("고객 스냅샷의 약화 신호 분류가 없습니다.")
+    probabilities = pd.to_numeric(recommendations["risk_probability"], errors="coerce")
+    if probabilities.isna().any() or probabilities.lt(0).any() or probabilities.gt(1).any():
+        raise ValueError("고객 스냅샷 예측확률은 0과 1 사이여야 합니다.")
+    recommendations["priority_level"] = _risk_level(probabilities)
+    recommendations["recommended_action"] = recommendations["weakening_type"].map(
+        RECOMMENDED_ACTIONS
+    )
+    recommendations["contact_strategy"] = recommendations["priority_level"].map(
+        CONTACT_STRATEGIES
+    )
+    recommendations["reason"] = recommendations.apply(
+        lambda row: (
+            f"{row['weakening_type']} 신호와 지속거래약화 가능성 "
+            f"{row['risk_probability']:.1%}를 고려한 조기관리 대상"
+        ),
+        axis=1,
+    )
+    recommendations["strategy_summary"] = recommendations.apply(
+        lambda row: (
+            f"{row['segment_name']} 세그먼트의 {row['priority_level']} 관리 대상입니다. "
+            f"{row['recommended_action']}을 우선 검토합니다."
+        ),
+        axis=1,
+    )
+    return recommendations.loc[
+        :,
+        [
+            "corporate_id",
+            "as_of_month",
+            "weakening_type",
+            "priority_level",
+            "reason",
+            "contact_strategy",
+            "recommended_action",
+            "strategy_summary",
+        ],
+    ]
+
+
 def build_service_tables(
     inputs: ServiceInputs,
     as_of_month: str | None = None,
@@ -465,12 +633,26 @@ def build_service_tables(
             "사업장_시도": "region",
         }
     )
-    snapshots.insert(10, "weakening_type", "미분류")
+    weakening_signals = build_weakening_signals(source, risk_ids, month)
+    weakening_types = classify_weakening_type(weakening_signals)
+    snapshots = snapshots.merge(
+        weakening_types,
+        on=["corporate_id", "as_of_month"],
+        how="left",
+        validate="one_to_one",
+    )
+    if snapshots["weakening_type"].isna().any():
+        raise ValueError("위험점수 모집단의 약화 신호 분류가 없습니다.")
+    weakening_type = snapshots.pop("weakening_type")
+    snapshots.insert(10, "weakening_type", weakening_type)
+    recommendations = build_recommendations(snapshots, weakening_signals)
     return {
         "customers": customers.reset_index(drop=True),
         "risk_scores": risk_table.reset_index(drop=True),
         "segments": segments.reset_index(drop=True),
         "profitability": profitability_table.reset_index(drop=True),
+        "weakening_signals": weakening_signals.reset_index(drop=True),
         "shap_factors": shap_table.reset_index(drop=True),
+        "recommendations": recommendations.reset_index(drop=True),
         "customer_snapshots": snapshots.reset_index(drop=True),
     }
