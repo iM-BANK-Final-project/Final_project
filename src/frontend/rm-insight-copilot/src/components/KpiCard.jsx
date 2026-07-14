@@ -1,9 +1,11 @@
 export default function KpiCard({ label, value, detail, tone = "mint" }) {
   return (
     <article className={`kpi-card ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
+      <div className="kpi-main">
+        <span className="kpi-label">{label}</span>
+        <strong className="kpi-value">{value}</strong>
+      </div>
+      <small className="kpi-detail">{detail}</small>
     </article>
   );
 }

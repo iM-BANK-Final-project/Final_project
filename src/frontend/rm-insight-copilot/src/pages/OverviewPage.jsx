@@ -9,49 +9,56 @@ export default function OverviewPage({ onPageChange }) {
 
   return (
     <main className="page">
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <span className="service-pill">RM Insight Copilot</span>
+      <section className="overview-hero">
+        <div className="overview-intro">
           <h1>RM 인사이트 코파일럿</h1>
-          <p>법인고객의 금융활동 약화 신호를 읽고, 우선 관리 대상과 다음 액션을 제안합니다.</p>
-          <div className="hero-actions">
-            <button className="primary-button" onClick={() => onPageChange("priority")}>
-              우선순위 보기
-            </button>
-            <button className="ghost-button" onClick={() => onPageChange("report")}>
-              AI 보고서 보기
-            </button>
-          </div>
+          <p>지속거래약화 가능성이 높은 법인고객을 추려 오늘의 관리 순서와 접촉 전략을 정리합니다.</p>
         </div>
-        <div className="hero-card service-summary-card">
-          <span className="summary-label">오늘의 우선 관리</span>
-          <strong>{topCustomer.name}</strong>
-          <div className="summary-metric">
-            <span>금융관계 약화 위험</span>
-            <b>{topCustomer.risk}%</b>
-          </div>
-          <StatusBadge tone="lime">{topCustomer.weakeningType}</StatusBadge>
+        <div className="overview-actions">
+          <button className="primary-button" onClick={() => onPageChange("priority")}>
+            관리 우선순위
+          </button>
+          <button className="ghost-button" onClick={() => onPageChange("risk")}>
+            약화 신호 보기
+          </button>
         </div>
       </section>
 
-      <section className="kpi-grid">
-        <KpiCard label="조기관리 대상 고객" value="196개" detail="전월 대비 +12개" />
-        <KpiCard label="평균 금융관계 약화 위험" value="52%" detail="예시 데이터 · 상위 위험군" tone="lime" />
-        <KpiCard label="고위험 고객 비중" value="18.4%" detail="risk 75% 이상" tone="amber" />
-        <KpiCard label="조기관리 우선 금액" value="128.4억" detail="예시 데이터 · 고객가치 대리지표" tone="blue" />
+      <section className="overview-layout">
+        <article className="focus-panel">
+          <div>
+            <span className="summary-label">오늘의 관리 포커스</span>
+            <h2>{topCustomer.name}</h2>
+            <p>{topCustomer.summary}</p>
+          </div>
+          <div className="focus-meta">
+            <div>
+              <span>금융관계 약화 위험</span>
+              <strong>{topCustomer.risk}%</strong>
+            </div>
+            <StatusBadge tone="lime">{topCustomer.weakeningType}</StatusBadge>
+          </div>
+        </article>
+
+        <section className="kpi-grid compact">
+          <KpiCard label="조기관리 대상" value="196" detail="전월 대비 +12" />
+          <KpiCard label="평균 위험" value="52%" detail="상위 위험군 기준" tone="lime" />
+          <KpiCard label="고위험 비중" value="18.4%" detail="risk 75% 이상" tone="amber" />
+          <KpiCard label="우선관리 금액" value="128.4억" detail="고객가치 대리지표" tone="blue" />
+        </section>
       </section>
 
-      <section className="two-column">
+      <section className="two-column overview-content">
         <article className="panel">
           <SectionHeader
             eyebrow="Trend"
-            title="월별 금융활동 약화 추이"
-            description="최신월 하나가 아니라 기준월별 rolling scoring 흐름으로 해석합니다."
+            title="월별 지속거래약화 위험"
+            description="기준월별 rolling scoring 흐름으로 관리 대상 변화를 확인합니다."
           />
           <MiniTrendChart data={monthlyTrend} />
         </article>
         <article className="panel">
-          <SectionHeader eyebrow="Signals" title="약화 원인 Top 5" />
+          <SectionHeader eyebrow="Signals" title="주요 약화 신호" />
           <div className="rank-list">
             {signalSummary.map((signal, index) => (
               <div className="rank-item" key={signal.label}>

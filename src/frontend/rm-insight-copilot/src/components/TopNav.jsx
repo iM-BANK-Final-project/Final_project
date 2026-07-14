@@ -11,7 +11,9 @@ export default function TopNav({ activePage, onPageChange }) {
   return (
     <header className="top-nav">
       <button className="brand" onClick={() => onPageChange("overview")} aria-label="Overview">
-        <span className="brand-mark">RM</span>
+        <span className="brand-mark">
+          <img src="/brand-assets/im-bank-logo.png" alt="iM Bank" />
+        </span>
         <span>
           <strong>RM 인사이트 코파일럿</strong>
           <small>Corporate Banking</small>
