@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Create only `docs/modeling_end_to_end_reproduction_guide.md` as the reader-facing deliverable.
+- Create only `docs/modeling_with_segment.md` as the reader-facing deliverable.
 - Treat `Y_지속거래약화_3M70` as the approved event label.
 - Label `Y_향후3개월_지속거래약화` and all reported model performance as exploratory until the rolling target and time policy are re-approved.
 - Do not claim that hyperparameter tuning was performed.
@@ -22,7 +22,7 @@
 ### Task 1: Write and verify the modeling reproduction guide
 
 **Files:**
-- Create: `docs/modeling_end_to_end_reproduction_guide.md`
+- Create: `docs/modeling_with_segment.md`
 - Reference: `financial_dormancy.md`
 - Reference: `y_setting_pipeline.md`
 - Reference: `docs/superpowers/specs/2026-07-13-persistent-transaction-weakening-y-design.md`
@@ -37,7 +37,7 @@
 
 **Interfaces:**
 - Consumes: approved design documents, executable Python modules, real-data CSV outputs, pytest contracts.
-- Produces: `docs/modeling_end_to_end_reproduction_guide.md`, a standalone implementation and interpretation guide.
+- Produces: `docs/modeling_with_segment.md`, a standalone implementation and interpretation guide.
 
 - [ ] **Step 1: Reconcile definitions, implementation, and saved metrics**
 
@@ -52,7 +52,7 @@ Expected: the approved event contract, exploratory rolling target, time split co
 
 - [ ] **Step 2: Write the complete guide**
 
-Create `docs/modeling_end_to_end_reproduction_guide.md` with these reader-facing sections:
+Create `docs/modeling_with_segment.md` with these reader-facing sections:
 
 ```text
 1. 한눈에 보는 현재 상태
@@ -80,7 +80,7 @@ Include exact formulas, boundary examples, a Mermaid data-flow diagram, paramete
 Run:
 
 ```bash
-rg -n "TBD|TODO|FIXME|0.2959|75.5%" docs/modeling_end_to_end_reproduction_guide.md
+rg -n "TBD|TODO|FIXME|0.2959|75.5%" docs/modeling_with_segment.md
 git diff --check
 /opt/anaconda3/envs/ml/bin/python -m pytest -q
 ```
@@ -92,7 +92,7 @@ Expected: the placeholder/stale-metric scan returns no matches, `git diff --chec
 Run:
 
 ```bash
-/opt/anaconda3/envs/ml/bin/python -c 'from pathlib import Path; import re; text=Path("docs/modeling_end_to_end_reproduction_guide.md").read_text(); paths=sorted(set(re.findall(r"`((?:src|tests|docs)/[^`]+)`", text))); missing=[p for p in paths if not Path(p).exists()]; print({"documented_paths": len(paths), "missing": missing}); raise SystemExit(bool(missing))'
+/opt/anaconda3/envs/ml/bin/python -c 'from pathlib import Path; import re; text=Path("docs/modeling_with_segment.md").read_text(); paths=sorted(set(re.findall(r"`((?:src|tests|docs)/[^`]+)`", text))); missing=[p for p in paths if not Path(p).exists()]; print({"documented_paths": len(paths), "missing": missing}); raise SystemExit(bool(missing))'
 ```
 
 Expected: `missing` is an empty list.
@@ -100,6 +100,6 @@ Expected: `missing` is an empty list.
 - [ ] **Step 5: Commit the guide**
 
 ```bash
-git add docs/modeling_end_to_end_reproduction_guide.md docs/superpowers/plans/2026-07-14-modeling-reproduction-guide.md
+git add docs/modeling_with_segment.md docs/superpowers/plans/2026-07-14-modeling-reproduction-guide.md
 git commit -m "docs: add end-to-end modeling reproduction guide"
 ```

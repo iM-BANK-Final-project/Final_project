@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-`docs/modeling_end_to_end_reproduction_guide.md` 하나만 읽어도 다른 팀원이 현재까지의 지속거래약화 모델링을 이해하고, 원천 CSV에서 동일한 산출물과 성과지표를 재현할 수 있게 한다.
+`docs/modeling_with_segment.md` 하나만 읽어도 다른 팀원이 현재까지의 지속거래약화 모델링을 이해하고, 원천 CSV에서 동일한 산출물과 성과지표를 재현할 수 있게 한다.
 
 ## 2. 독자와 문서 성격
 
