@@ -17,8 +17,14 @@ const pages = {
 
 export default function App() {
   const [activePage, setActivePage] = useState("overview");
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [showSplash, setShowSplash] = useState(true);
   const ActivePage = pages[activePage];
+
+  const openRecommendation = (corporateId) => {
+    setSelectedCustomerId(corporateId);
+    setActivePage("recommendations");
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 2700);
@@ -29,10 +35,17 @@ export default function App() {
     return <SplashScreen />;
   }
 
+  const pageProps = {
+    overview: { onPageChange: setActivePage },
+    priority: { onRecommendationOpen: openRecommendation },
+    recommendations: { selectedCustomerId },
+    report: { selectedCustomerId }
+  }[activePage] ?? {};
+
   return (
     <div className="app-shell">
       <TopNav activePage={activePage} onPageChange={setActivePage} />
-      <ActivePage onPageChange={setActivePage} />
+      <ActivePage {...pageProps} />
     </div>
   );
 }
