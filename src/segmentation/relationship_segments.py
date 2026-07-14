@@ -15,6 +15,11 @@ SEGMENT_ORDER = (
     "여신중심",
     "복합고관계",
 )
+SEGMENT_DUMMY_MAP = {
+    segment: f"segment_{segment.replace('·', '')}"
+    for segment in SEGMENT_ORDER
+}
+SEGMENT_DUMMY_COLUMNS = tuple(SEGMENT_DUMMY_MAP.values())
 
 
 @dataclass(frozen=True)
@@ -192,6 +197,75 @@ def summarize_relationship_window(
         .sort_values(config.customer_id_col)
         .reset_index(drop=True)
     )
+
+
+def build_reference_relationship_levels(
+    monthly: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> pd.DataFrame:
+    config = config or SegmentationConfig()
+    levels = summarize_relationship_window(
+        monthly,
+        "2023-01",
+        "2023-12",
+        config,
+    )
+    _, reference = fit_reference_scores(levels, config)
+    return reference
+
+
+def build_rolling_relationship_features(
+    monthly: pd.DataFrame,
+    reference: pd.DataFrame,
+    config: SegmentationConfig | None = None,
+) -> pd.DataFrame:
+    config = config or SegmentationConfig()
+    _require_columns(
+        monthly,
+        (
+            config.customer_id_col,
+            config.month_col,
+            *config.axis_columns.keys(),
+        ),
+    )
+    work = monthly.sort_values(
+        [config.customer_id_col, config.month_col]
+    ).copy()
+    if work.duplicated(
+        [config.customer_id_col, config.month_col]
+    ).any():
+        raise ValueError("법인×월 중복이 있습니다.")
+
+    rolling = work.loc[
+        :, [config.customer_id_col, config.month_col]
+    ].copy()
+    for amount_column, level_column in config.amount_level_pairs:
+        log_amount = np.log1p(
+            pd.to_numeric(work[amount_column], errors="coerce")
+        )
+        rolling[level_column] = log_amount.groupby(
+            work[config.customer_id_col],
+            sort=False,
+        ).transform(
+            lambda values: values.rolling(12, min_periods=12).median()
+        )
+
+    complete = rolling.dropna(subset=list(config.level_columns)).copy()
+    scored = score_against_reference(complete, reference, config)
+    assigned = assign_l30_h70_m15(scored, config)
+    for segment, dummy_column in SEGMENT_DUMMY_MAP.items():
+        assigned[dummy_column] = assigned["관계세그먼트"].eq(segment).astype(int)
+    return assigned.loc[
+        :,
+        [
+            config.customer_id_col,
+            config.month_col,
+            *config.level_columns,
+            *config.score_columns,
+            "관계세그먼트",
+            *SEGMENT_DUMMY_COLUMNS,
+        ],
+    ].reset_index(drop=True)
 
 
 def _validate_relationship_levels(

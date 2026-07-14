@@ -8,9 +8,12 @@ import numpy as np
 import pandas as pd
 
 from src.segmentation.relationship_segments import (
+    SEGMENT_DUMMY_COLUMNS,
     SegmentationConfig,
     assign_l30_h70_m15,
     build_monthly_relationship_axes,
+    build_reference_relationship_levels,
+    build_rolling_relationship_features,
     build_segment_profile,
     build_segment_stability,
     fit_reference_scores,
@@ -145,6 +148,106 @@ class RelationshipLevelTests(unittest.TestCase):
                 "2023-01",
                 "2023-12",
             )
+
+
+class RollingRelationshipFeatureTests(unittest.TestCase):
+    def setUp(self):
+        self.source = make_monthly_source(
+            customer_ids=("A", "B"),
+            years=(2023, 2024),
+        )
+        for position, customer_id in enumerate(("A", "B"), start=1):
+            mask = self.source["법인ID"].eq(customer_id)
+            sequence = np.arange(1, 25) * position
+            self.source.loc[mask, "요구불입금금액"] = sequence
+            self.source.loc[mask, "요구불예금잔액"] = 2 * sequence
+            self.source.loc[mask, "여신_운전자금대출잔액"] = 3 * sequence
+        self.monthly = build_monthly_relationship_axes(self.source)
+        self.reference = build_reference_relationship_levels(self.monthly)
+
+    def test_uses_exact_customer_local_trailing_twelve_months(self):
+        rolling = build_rolling_relationship_features(
+            self.monthly,
+            self.reference,
+        )
+        anchor = rolling.loc[
+            rolling["법인ID"].eq("A")
+            & rolling["기준년월"].eq(pd.Period("2024-02", freq="M"))
+        ].iloc[0]
+
+        expected_activity = np.median(np.log1p(np.arange(3, 15)))
+        expected_deposit = np.median(np.log1p(2 * np.arange(3, 15)))
+        expected_loan = np.median(np.log1p(3 * np.arange(3, 15)))
+        self.assertAlmostEqual(
+            anchor["거래활동관계수준"], expected_activity
+        )
+        self.assertAlmostEqual(anchor["수신관계수준"], expected_deposit)
+        self.assertAlmostEqual(anchor["여신관계수준"], expected_loan)
+
+        customer_b = rolling.loc[
+            rolling["법인ID"].eq("B")
+            & rolling["기준년월"].eq(pd.Period("2024-02", freq="M"))
+        ].iloc[0]
+        self.assertAlmostEqual(
+            customer_b["거래활동관계수준"],
+            float(np.median(np.log1p(2 * np.arange(3, 15)))),
+        )
+
+    def test_future_source_changes_do_not_change_anchor_features(self):
+        baseline = build_rolling_relationship_features(
+            self.monthly,
+            self.reference,
+        )
+        changed_source = self.source.copy()
+        future = changed_source["기준년월"].gt(202402)
+        changed_source.loc[
+            future, SegmentationConfig().amount_cols
+        ] = 1_000_000_000.0
+        changed_monthly = build_monthly_relationship_axes(changed_source)
+        changed = build_rolling_relationship_features(
+            changed_monthly,
+            self.reference,
+        )
+
+        columns = [
+            *SegmentationConfig().level_columns,
+            *SegmentationConfig().score_columns,
+            "관계세그먼트",
+            *SEGMENT_DUMMY_COLUMNS,
+        ]
+        key = (
+            baseline["법인ID"].eq("A")
+            & baseline["기준년월"].eq(pd.Period("2024-02", freq="M"))
+        )
+        changed_key = (
+            changed["법인ID"].eq("A")
+            & changed["기준년월"].eq(pd.Period("2024-02", freq="M"))
+        )
+        pd.testing.assert_series_equal(
+            baseline.loc[key, columns].iloc[0],
+            changed.loc[changed_key, columns].iloc[0],
+        )
+
+    def test_uses_frozen_reference_and_materializes_one_hot_segments(self):
+        rolling = build_rolling_relationship_features(
+            self.monthly,
+            self.reference,
+        )
+        last_month = rolling.loc[
+            rolling["기준년월"].eq(pd.Period("2024-12", freq="M"))
+        ].sort_values("법인ID")
+
+        self.assertEqual(
+            last_month["거래활동점수"].tolist(),
+            [1.0, 1.0],
+        )
+        self.assertEqual(
+            last_month.loc[:, SEGMENT_DUMMY_COLUMNS].sum(axis=1).tolist(),
+            [1, 1],
+        )
+        for _, row in last_month.iterrows():
+            normalized = row["관계세그먼트"].replace("·", "")
+            self.assertEqual(row[f"segment_{normalized}"], 1)
 
 
 class SegmentRuleTests(unittest.TestCase):
