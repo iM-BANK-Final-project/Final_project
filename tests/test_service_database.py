@@ -1,7 +1,18 @@
+import hashlib
+import json
+from pathlib import Path
+
+import pandas as pd
 import pytest
 
 from src.backend import database
 from src.backend.database import connect_database, initialize_schema
+from src.backend.load_service_database import (
+    ServiceSourcePaths,
+    load_service_database,
+    main as load_main,
+)
+from src.segmentation.relationship_segments import SegmentationConfig
 
 
 EXPECTED_TABLES = {
@@ -16,6 +27,149 @@ EXPECTED_TABLES = {
     "monthly_summaries",
     "import_runs",
 }
+
+
+def _write_service_source_csvs(directory: Path) -> ServiceSourcePaths:
+    config = SegmentationConfig()
+    source_rows = []
+    for month_index, month in enumerate(
+        pd.period_range("2024-10", "2025-06", freq="M"), start=1
+    ):
+        row = {
+            "법인ID": "A",
+            "기준년월": str(month),
+            "업종_대분류": "제조업",
+            "사업장_시도": "서울",
+            "법인_고객등급": "우수",
+            "전담고객여부": "Y",
+            "상품관계폭": 3,
+        }
+        row.update({column: float(month_index) for column in config.amount_cols})
+        source_rows.append(row)
+
+    frames = {
+        "source": pd.DataFrame(source_rows),
+        "risk_scores": pd.DataFrame(
+            {
+                "법인ID": ["A"],
+                "기준년월": ["2025-06"],
+                "모델": ["LightGBM"],
+                "예측확률": [0.8],
+            }
+        ),
+        "segment_panel": pd.DataFrame(
+            {
+                "법인ID": ["A"],
+                "기준년월": ["2025-06"],
+                "관계세그먼트": ["복합고관계"],
+                "거래활동점수": [0.9],
+                "수신관계점수": [0.8],
+                "여신관계점수": [0.7],
+            }
+        ),
+        "profitability": pd.DataFrame(
+            {
+                "법인ID": ["A"],
+                "기준월": ["2025-06"],
+                "V_FTP_12M": [100.0],
+                "V_FTP_12M_방어가치": [30.0],
+            }
+        ),
+        "shap_local": pd.DataFrame(
+            {
+                "모델": ["LightGBM"],
+                "법인ID": ["A"],
+                "기준년월": ["2025-06"],
+                "feature": ["최근3개월_입출금"],
+                "feature_value": [9.0],
+                "shap_value": [0.2],
+                "abs_shap_rank": [1],
+            }
+        ),
+    }
+    paths = {}
+    for name, frame in frames.items():
+        path = directory / f"{name}.csv"
+        frame.to_csv(path, index=False)
+        paths[name] = path
+    return ServiceSourcePaths(**paths)
+
+
+def test_load_service_database_builds_atomic_completed_snapshot(tmp_path):
+    paths = _write_service_source_csvs(tmp_path)
+    db_path = tmp_path / "service.sqlite"
+
+    summary = load_service_database(paths, db_path, as_of_month=None)
+
+    assert summary.status == "COMPLETED"
+    assert summary.as_of_month == "2025-06"
+    with connect_database(db_path) as connection:
+        snapshot = connection.execute(
+            "SELECT risk_probability, customer_value_proxy, crm_priority_score "
+            "FROM customer_snapshots WHERE corporate_id='A'"
+        ).fetchone()
+    assert snapshot["crm_priority_score"] == pytest.approx(
+        snapshot["risk_probability"] * snapshot["customer_value_proxy"]
+    )
+
+
+def test_load_service_database_records_hashes_paths_and_row_counts(tmp_path):
+    paths = _write_service_source_csvs(tmp_path)
+    db_path = tmp_path / "service.sqlite"
+
+    summary = load_service_database(paths, db_path, as_of_month="2025-06")
+
+    with connect_database(db_path) as connection:
+        import_run = connection.execute(
+            "SELECT * FROM import_runs WHERE run_id = ?", (summary.run_id,)
+        ).fetchone()
+    manifest = json.loads(import_run["source_manifest_json"])
+    row_counts = json.loads(import_run["row_counts_json"])
+    assert import_run["status"] == "COMPLETED"
+    assert import_run["completed_at"] is not None
+    assert import_run["error_message"] is None
+    assert row_counts == summary.row_counts
+    for source_name, source_path in vars(paths).items():
+        assert manifest[source_name]["path"] == str(source_path)
+        assert manifest[source_name]["sha256"] == hashlib.sha256(
+            source_path.read_bytes()
+        ).hexdigest()
+
+
+def test_load_cli_failure_returns_nonzero_and_preserves_previous_database(
+    tmp_path, monkeypatch, capsys
+):
+    paths = _write_service_source_csvs(tmp_path)
+    db_path = tmp_path / "service.sqlite"
+    db_path.write_bytes(b"known-good")
+
+    def fail_during_insert(*_args, **_kwargs):
+        raise RuntimeError("insert failed")
+
+    monkeypatch.setattr(pd.DataFrame, "to_sql", fail_during_insert)
+    exit_code = load_main(
+        [
+            "--source",
+            str(paths.source),
+            "--risk-scores",
+            str(paths.risk_scores),
+            "--segment-panel",
+            str(paths.segment_panel),
+            "--profitability",
+            str(paths.profitability),
+            "--shap-local",
+            str(paths.shap_local),
+            "--database",
+            str(db_path),
+            "--as-of-month",
+            "2025-06",
+        ]
+    )
+
+    assert exit_code != 0
+    assert "insert failed" in capsys.readouterr().err
+    assert db_path.read_bytes() == b"known-good"
+    assert not db_path.with_suffix(".sqlite.tmp").exists()
 
 
 def test_initialize_schema_creates_service_tables(tmp_path):
