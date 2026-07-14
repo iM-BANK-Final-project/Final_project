@@ -149,12 +149,13 @@ PRIMARY KEY (corporate_id, as_of_month)
 corporate_id
 as_of_month
 profitability_value nullable
+defense_value nullable
 customer_value_proxy
 value_components_json
 PRIMARY KEY (corporate_id, as_of_month)
 ```
 
-`profitability_value`와 `customer_value_proxy`는 구분한다. 실제 수익성 정의가 완성된 경우에만 수익성 값을 표시하며, 고객가치 대리지표를 수익으로 이름 붙이지 않는다.
+`profitability_value`에는 `V_FTP_12M`, `defense_value`에는 `V_FTP_12M_방어가치`를 저장한다. 두 수익성 필드와 `customer_value_proxy`는 구분한다. 실제 수익성 정의가 완성된 경우에만 수익성 값을 표시하며, 고객가치 대리지표를 수익으로 이름 붙이지 않는다.
 
 ### `weakening_signals`
 
@@ -209,6 +210,7 @@ risk_probability
 risk_level
 customer_value_proxy
 profitability_value nullable
+defense_value nullable
 crm_priority_score
 crm_priority_rank
 segment_name
