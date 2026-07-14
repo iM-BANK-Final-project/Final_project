@@ -354,6 +354,20 @@ def test_weakening_type_uses_multi_axis_threshold_then_most_negative_axis():
     }
 
 
+def test_weakening_type_marks_all_null_axis_changes_unclassified():
+    signals = pd.DataFrame(
+        [
+            ("A", "2025-09", signal_type, None)
+            for signal_type in ("입출금", "채널", "카드")
+        ],
+        columns=["corporate_id", "as_of_month", "signal_type", "change_rate"],
+    )
+
+    result = classify_weakening_type(signals)
+
+    assert result.loc[0, "weakening_type"] == "미분류"
+
+
 def test_recommendation_uses_approved_actions_and_deterministic_context_copy():
     snapshots = pd.DataFrame(
         {
@@ -395,3 +409,31 @@ def test_recommendation_uses_approved_actions_and_deterministic_context_copy():
         assert row["weakening_type"] in row["reason"]
         assert snapshots.set_index("corporate_id").loc[customer_id, "segment_name"] in row["strategy_summary"]
         assert row["recommended_action"] in row["strategy_summary"]
+
+
+def test_recommendation_uses_transparent_fallback_when_all_changes_are_null():
+    snapshots = pd.DataFrame(
+        {
+            "corporate_id": ["A"],
+            "as_of_month": ["2025-09"],
+            "risk_probability": [0.80],
+            "segment_name": ["저관계"],
+        }
+    )
+    signals = pd.DataFrame(
+        [
+            ("A", "2025-09", signal_type, None)
+            for signal_type in ("입출금", "채널", "카드")
+        ],
+        columns=["corporate_id", "as_of_month", "signal_type", "change_rate"],
+    )
+
+    recommendation = build_recommendations(snapshots, signals).iloc[0]
+
+    assert recommendation["weakening_type"] == "미분류"
+    assert recommendation["contact_strategy"] == "RM 확인"
+    assert recommendation["recommended_action"] == "거래이력 확인 후 RM 판단"
+    assert "비교 분모를 산출할 수 없어" in recommendation["reason"]
+    assert "약화 원인을 판단하지 않았습니다" in recommendation["reason"]
+    assert "비교 분모를 산출할 수 없어" in recommendation["strategy_summary"]
+    assert "약화 원인을 판단하지 않았습니다" in recommendation["strategy_summary"]

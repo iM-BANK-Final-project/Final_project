@@ -359,7 +359,7 @@ def classify_weakening_type(signals: pd.DataFrame) -> pd.DataFrame:
         if comparable["change_rate"].le(-20.0).sum() >= 2:
             weakening_type = "복합 거래활동"
         elif comparable.empty:
-            weakening_type = "복합 거래활동"
+            weakening_type = "미분류"
         else:
             weakening_type = comparable.sort_values(
                 ["change_rate", "signal_type"], kind="stable"
@@ -413,6 +413,22 @@ def build_recommendations(
             f"{row['recommended_action']}을 우선 검토합니다."
         ),
         axis=1,
+    )
+    unclassified = recommendations["weakening_type"].eq("미분류")
+    recommendations.loc[unclassified, "contact_strategy"] = "RM 확인"
+    recommendations.loc[unclassified, "recommended_action"] = (
+        "거래이력 확인 후 RM 판단"
+    )
+    recommendations.loc[unclassified, "reason"] = (
+        "비교 분모를 산출할 수 없어 약화 원인을 판단하지 않았습니다."
+    )
+    recommendations.loc[unclassified, "strategy_summary"] = recommendations.loc[
+        unclassified, "segment_name"
+    ].map(
+        lambda segment: (
+            f"{segment} 세그먼트이나 비교 분모를 산출할 수 없어 "
+            "약화 원인을 판단하지 않았습니다. 거래이력 확인 후 RM 판단이 필요합니다."
+        )
     )
     return recommendations.loc[
         :,
