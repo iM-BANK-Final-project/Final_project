@@ -20,6 +20,83 @@ from src.backend.service_builder import ServiceInputs, build_service_tables
 
 
 DEFAULT_DATABASE_PATH = Path("outputs/rm_service/rm_service.sqlite")
+SERVICE_TABLE_COLUMNS = {
+    "customers": (
+        "corporate_id",
+        "corporate_name",
+        "industry",
+        "region",
+        "customer_grade",
+        "dedicated_yn",
+    ),
+    "risk_scores": (
+        "corporate_id",
+        "as_of_month",
+        "model_name",
+        "risk_probability",
+        "risk_level",
+    ),
+    "segments": (
+        "corporate_id",
+        "as_of_month",
+        "segment_name",
+        "activity_score",
+        "deposit_score",
+        "loan_score",
+    ),
+    "profitability": (
+        "corporate_id",
+        "as_of_month",
+        "profitability_value",
+        "defense_value",
+        "customer_value_proxy",
+        "value_components_json",
+    ),
+    "weakening_signals": (
+        "corporate_id",
+        "as_of_month",
+        "signal_type",
+        "current_value",
+        "comparison_value",
+        "change_rate",
+        "signal_rank",
+    ),
+    "shap_factors": (
+        "corporate_id",
+        "as_of_month",
+        "model_name",
+        "feature_name",
+        "feature_value",
+        "shap_value",
+        "abs_shap_rank",
+    ),
+    "recommendations": (
+        "corporate_id",
+        "as_of_month",
+        "weakening_type",
+        "priority_level",
+        "reason",
+        "contact_strategy",
+        "recommended_action",
+        "strategy_summary",
+    ),
+    "customer_snapshots": (
+        "corporate_id",
+        "as_of_month",
+        "risk_probability",
+        "risk_level",
+        "customer_value_proxy",
+        "profitability_value",
+        "defense_value",
+        "crm_priority_score",
+        "crm_priority_rank",
+        "segment_name",
+        "weakening_type",
+        "industry",
+        "region",
+        "dedicated_yn",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -68,6 +145,41 @@ def _read_inputs(paths: ServiceSourcePaths) -> ServiceInputs:
     )
 
 
+def _sqlite_value(value: object) -> object:
+    if pd.isna(value):
+        return None
+    item = getattr(value, "item", None)
+    return item() if item is not None else value
+
+
+def _append_dataframe(
+    connection: sqlite3.Connection,
+    table_name: str,
+    frame: pd.DataFrame,
+) -> None:
+    """Append a known service table without committing the caller's transaction."""
+    expected_columns = SERVICE_TABLE_COLUMNS.get(table_name)
+    if expected_columns is None:
+        raise ValueError(f"허용되지 않은 서비스 테이블입니다: {table_name}")
+    actual_columns = tuple(frame.columns)
+    if actual_columns != expected_columns:
+        raise ValueError(
+            f"{table_name} 컬럼 계약 위반: "
+            f"expected={expected_columns}, actual={actual_columns}"
+        )
+    quoted_table = f'"{table_name}"'
+    quoted_columns = ", ".join(f'"{column}"' for column in expected_columns)
+    placeholders = ", ".join("?" for _ in expected_columns)
+    statement = (
+        f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})"
+    )
+    rows = (
+        tuple(_sqlite_value(value) for value in row)
+        for row in frame.itertuples(index=False, name=None)
+    )
+    connection.executemany(statement, rows)
+
+
 def load_service_database(
     paths: ServiceSourcePaths,
     database_path: Path,
@@ -101,7 +213,7 @@ def load_service_database(
             ),
         )
         for table_name, frame in tables.items():
-            frame.to_sql(table_name, connection, if_exists="append", index=False)
+            _append_dataframe(connection, table_name, frame)
         connection.execute(
             """
             UPDATE import_runs

@@ -9,6 +9,7 @@ from src.backend import database
 from src.backend.database import connect_database, initialize_schema
 from src.backend.load_service_database import (
     ServiceSourcePaths,
+    _append_dataframe,
     load_service_database,
     main as load_main,
 )
@@ -27,6 +28,44 @@ EXPECTED_TABLES = {
     "monthly_summaries",
     "import_runs",
 }
+
+
+def test_dataframe_append_stays_in_callers_transaction_and_rolls_back(tmp_path):
+    connection = connect_database(tmp_path / "service.sqlite")
+    initialize_schema(connection)
+    connection.execute("BEGIN")
+    connection.execute(
+        """
+        INSERT INTO import_runs (
+            run_id, started_at, status, as_of_month,
+            source_manifest_json, row_counts_json
+        ) VALUES ('run-1', '2026-07-14T00:00:00+00:00', 'RUNNING',
+                  '2025-06', '{}', '{}')
+        """
+    )
+    frame = pd.DataFrame(
+        {
+            "corporate_id": ["A"],
+            "corporate_name": [pd.NA],
+            "industry": ["제조업"],
+            "region": ["서울"],
+            "customer_grade": ["일반"],
+            "dedicated_yn": [1],
+        }
+    )
+
+    _append_dataframe(connection, "customers", frame)
+
+    assert connection.in_transaction is True
+    inserted = connection.execute(
+        "SELECT corporate_name, dedicated_yn FROM customers WHERE corporate_id='A'"
+    ).fetchone()
+    assert inserted["corporate_name"] is None
+    assert inserted["dedicated_yn"] == 1
+    connection.rollback()
+    assert connection.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0
+    assert connection.execute("SELECT COUNT(*) FROM import_runs").fetchone()[0] == 0
+    connection.close()
 
 
 def _write_service_source_csvs(directory: Path) -> ServiceSourcePaths:
@@ -146,7 +185,9 @@ def test_load_cli_failure_returns_nonzero_and_preserves_previous_database(
     def fail_during_insert(*_args, **_kwargs):
         raise RuntimeError("insert failed")
 
-    monkeypatch.setattr(pd.DataFrame, "to_sql", fail_during_insert)
+    monkeypatch.setattr(
+        "src.backend.load_service_database._append_dataframe", fail_during_insert
+    )
     exit_code = load_main(
         [
             "--source",
