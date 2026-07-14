@@ -248,11 +248,30 @@ error_message nullable
 ## 8. 우선순위와 추천 규칙
 
 ```text
+수신점수 = 기준월 수신잔액합계의 cohort 내 percentile rank
+여신점수 = 기준월 여신잔액합계의 cohort 내 percentile rank
+거래성금액점수 = 기준월 핵심거래활동금액의 cohort 내 percentile rank
+상품관계폭점수 = 기준월 상품관계폭의 cohort 내 percentile rank
+고객등급점수 = 일반 0.0, 우수 0.5, 최우수 1.0
+전담점수 = N 0.0, Y 1.0
+
+customer_value_proxy
+= mean(
+    수신점수,
+    여신점수,
+    거래성금액점수,
+    상품관계폭점수,
+    고객등급점수,
+    전담점수
+  )
+
 crm_priority_score
-= risk_probability × normalized_customer_value_proxy
+= risk_probability × customer_value_proxy
 ```
 
-점수는 최신 공통 기준월 안에서 내림차순 순위를 계산한다. 화면에서 금액 단위를 붙이거나 손실액으로 표시하지 않는다.
+금액·상품관계폭 percentile은 pandas `rank(method="average", pct=True)`와 동일하게 계산한다. 여섯 구성요소 중 하나라도 결측이거나 고객등급·전담여부가 허용 범주 밖이면 고객가치와 CRM 우선순위를 계산하지 않고 적재를 실패시킨다. 점수는 최신 공통 기준월 안에서 내림차순 순위를 계산한다. 화면에서 금액 단위를 붙이거나 손실액으로 표시하지 않는다.
+
+FTP 기반 수익성 `V_FTP_12M`과 방어가치 `V_FTP_12M_방어가치`는 `profitability_value`로 별도 저장·표시한다. 이를 고객가치 대리지표의 구성요소로 섞거나 수익성 값을 고객가치로 이름 붙이지 않는다.
 
 약화 원인은 기준월까지의 입출금·채널·카드 신호에서 결정한다.
 
@@ -386,4 +405,3 @@ API 오류 때문에 mock 데이터로 자동 대체하지 않는다. 실제 데
 - `전략 보고서 생성` 버튼은 유지되지만 이번 단계에서 생성 기능은 구현하지 않는다.
 - 화면 문구가 최종 Y와 CRM 우선순위 계약을 위반하지 않는다.
 - API·적재 테스트와 React 프로덕션 빌드가 통과한다.
-
