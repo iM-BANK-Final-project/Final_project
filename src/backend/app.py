@@ -69,6 +69,16 @@ def create_app(repository: ServiceRepository | None = None) -> FastAPI:
             status_code=500, content={"detail": "데이터 조회 중 오류가 발생했습니다."}
         )
 
+    @application.exception_handler(Exception)
+    async def unexpected_error_handler(_request: Request, error: Exception):
+        LOGGER.error(
+            "Unexpected RM service error",
+            exc_info=(type(error), error, error.__traceback__),
+        )
+        return JSONResponse(
+            status_code=500, content={"detail": "서버 내부 오류가 발생했습니다."}
+        )
+
     @application.get("/api/health", response_model=Health)
     def health(request: Request):
         repo(request).health()

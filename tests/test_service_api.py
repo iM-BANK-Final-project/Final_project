@@ -313,3 +313,21 @@ def test_rejects_malformed_month_and_dedicated_filters(client):
 
     assert malformed_month.status_code == 422
     assert invalid_dedicated.status_code == 422
+
+
+def test_unexpected_error_is_logged_and_redacted(caplog):
+    class FailingRepository:
+        def overview(self, _as_of_month):
+            raise RuntimeError("secret SQL detail")
+
+    with TestClient(
+        create_app(FailingRepository()), raise_server_exceptions=False
+    ) as test_client:
+        with caplog.at_level("ERROR", logger="src.backend.app"):
+            response = test_client.get("/api/overview")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "서버 내부 오류가 발생했습니다."}
+    assert "secret SQL detail" in caplog.text
+    assert "secret" not in response.text.lower()
+    assert "sql" not in response.text.lower()
