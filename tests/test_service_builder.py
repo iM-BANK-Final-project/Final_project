@@ -168,6 +168,25 @@ def test_build_service_tables_rejects_invalid_risk_probability():
         build_service_tables(inputs)
 
 
+@pytest.mark.parametrize(
+    ("column", "invalid_value", "message"),
+    [
+        ("법인_고객등급", "미정", "고객등급 허용값 위반"),
+        ("전담고객여부", "UNKNOWN", "전담고객여부 허용값 위반"),
+    ],
+)
+def test_build_service_tables_rejects_invalid_category_in_earlier_source_month(
+    column,
+    invalid_value,
+    message,
+):
+    inputs = _inputs()
+    inputs.source.loc[inputs.source["법인ID"].eq("A"), column] = invalid_value
+
+    with pytest.raises(ValueError, match=message):
+        build_service_tables(inputs)
+
+
 def test_build_service_tables_uses_risk_population_and_contract_names():
     tables = build_service_tables(_inputs())
 

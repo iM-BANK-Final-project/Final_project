@@ -168,6 +168,15 @@ def select_common_month(inputs: ServiceInputs, requested: str | None) -> str:
     return requested_month
 
 
+def _validate_value_categories(frame: pd.DataFrame) -> None:
+    unknown_grades = sorted(set(frame["법인_고객등급"].dropna()) - GRADE_SCORES.keys())
+    if frame["법인_고객등급"].isna().any() or unknown_grades:
+        raise ValueError(f"고객등급 허용값 위반: {unknown_grades}")
+    unknown_flags = sorted(set(frame["전담고객여부"].dropna()) - DEDICATED_SCORES.keys())
+    if frame["전담고객여부"].isna().any() or unknown_flags:
+        raise ValueError(f"전담고객여부 허용값 위반: {unknown_flags}")
+
+
 def build_customer_value(source_month: pd.DataFrame) -> pd.DataFrame:
     """Build the approved six-component equal-weight customer-value proxy."""
     required = (
@@ -189,12 +198,7 @@ def build_customer_value(source_month: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("고객가치 원천 금액 또는 상품관계폭에 음수가 있습니다.")
     work.loc[:, VALUE_NUMERIC_COLUMNS] = numeric
 
-    unknown_grades = sorted(set(work["법인_고객등급"].dropna()) - GRADE_SCORES.keys())
-    if work["법인_고객등급"].isna().any() or unknown_grades:
-        raise ValueError(f"고객등급 허용값 위반: {unknown_grades}")
-    unknown_flags = sorted(set(work["전담고객여부"].dropna()) - DEDICATED_SCORES.keys())
-    if work["전담고객여부"].isna().any() or unknown_flags:
-        raise ValueError(f"전담고객여부 허용값 위반: {unknown_flags}")
+    _validate_value_categories(work)
 
     for source_column, score_column in zip(
         VALUE_NUMERIC_COLUMNS,
@@ -293,6 +297,7 @@ def build_service_tables(
         "원천 데이터",
         non_negative=True,
     )
+    _validate_value_categories(source)
     risk = _numeric_contract(risk, ("예측확률",), "위험점수", probability=True)
     segment = _numeric_contract(
         segment,
