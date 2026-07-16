@@ -9,6 +9,17 @@ import LoginPage from "./LoginPage.jsx";
 afterEach(cleanup);
 
 describe("LoginPage", () => {
+  it("exposes the brand and form panels for the responsive login layout", () => {
+    const { container } = render(<LoginPage onLogin={vi.fn()} />);
+
+    expect(screen.getByTestId("login-page")).toHaveClass("login-page");
+    expect(container.querySelector(".login-brand-panel")).toBeInTheDocument();
+    expect(container.querySelector(".login-form-panel")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "iM Bank RM Copilot" })
+    ).toBeInTheDocument();
+  });
+
   it("shows an inline error when the submitted demo credentials are rejected", () => {
     const onLogin = vi.fn(() => false);
 

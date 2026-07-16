@@ -18,7 +18,7 @@ export default function LoginPage({ onLogin }) {
   };
 
   return (
-    <main className="login-page">
+    <main className="login-page" data-testid="login-page">
       <section className="login-brand-panel" aria-label="RM Copilot 브랜드">
         <img
           className="login-brand-image"
