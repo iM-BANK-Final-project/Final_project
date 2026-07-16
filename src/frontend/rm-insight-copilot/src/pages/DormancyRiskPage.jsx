@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import ExpandableText from "../components/ExpandableText.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import RiskMeter from "../components/RiskMeter.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
@@ -81,8 +82,13 @@ export default function DormancyRiskPage() {
           <article className="customer-card" key={customer.id}>
             <div className="card-topline">
               <div>
-                <strong>{customer.name}</strong>
-                <small>{customer.id} · {customer.segment}</small>
+                <strong>
+                  <ExpandableText text={customer.name} label="기업명" />
+                </strong>
+                <small>
+                  <ExpandableText text={customer.id} label="법인ID" lines={2} />
+                  <span> · {customer.segment}</span>
+                </small>
               </div>
               <StatusBadge tone={customer.risk >= 75 ? "coral" : "amber"}>
                 {customer.weakeningType}

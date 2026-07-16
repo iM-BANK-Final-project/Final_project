@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import ExpandableText from "../components/ExpandableText.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
@@ -61,7 +62,9 @@ export default function RecommendationsPage({ selectedCustomerId }) {
           <article className="recommendation-card" key={item.id}>
             <div className="card-topline">
               <div>
-                <strong>{item.name}</strong>
+                <strong>
+                  <ExpandableText text={item.name} label="기업명" />
+                </strong>
                 <small>{item.segment}</small>
               </div>
               <StatusBadge tone={item.priority === "High" ? "coral" : "lime"}>

@@ -1,3 +1,4 @@
+import ExpandableText from "../components/ExpandableText.jsx";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTrendChart from "../components/MiniTrendChart.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
@@ -57,7 +58,12 @@ export default function OverviewPage({ onPageChange }) {
         <article className="focus-panel">
           <div>
             <span className="summary-label">오늘의 관리 포커스</span>
-            <h2>{topCustomer.name}</h2>
+            <h2>
+              <ExpandableText text={topCustomer.name} label="기업명" />
+            </h2>
+            <small className="focus-customer-id">
+              법인ID <ExpandableText text={topCustomer.id} label="법인ID" />
+            </small>
             <p>{topCustomer.weakeningType} 신호가 관찰되어 조기관리 검토가 필요합니다.</p>
           </div>
           <div className="focus-meta">
@@ -88,7 +94,7 @@ export default function OverviewPage({ onPageChange }) {
             tone="amber"
           />
           <KpiCard
-            label="CRM 관리 우선순위 점수"
+            label="CRM 우선순위 점수"
             value={scoreFormatter.format(overview.priorityValueTotal)}
             detail="RM 운영 순서용 합산 점수"
             tone="blue"

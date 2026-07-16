@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import ExpandableText from "../components/ExpandableText.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
@@ -73,7 +74,9 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
         )}
         {!reportState.loading && !reportState.error && report && (
           <>
-            <h3>{customer.name}</h3>
+            <h3>
+              <ExpandableText text={customer.name} label="기업명" lines={2} />
+            </h3>
             <p>{report.strategySummary}</p>
             <div className="waterfall">
               {(customer.signals ?? []).map((signal) => {

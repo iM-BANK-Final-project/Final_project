@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import ExpandableText from "../components/ExpandableText.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
@@ -102,8 +103,8 @@ export default function PriorityPage({ onRecommendationOpen }) {
             {customers.map((customer, index) => (
               <tr key={customer.id}>
                 <td>{customer.priorityRank ?? index + 1}</td>
-                <td>{customer.id}</td>
-                <td><strong>{customer.name}</strong></td>
+                <td><ExpandableText text={customer.id} label="법인ID" /></td>
+                <td><strong><ExpandableText text={customer.name} label="기업명" /></strong></td>
                 <td>{customer.industry}</td>
                 <td>{customer.region}</td>
                 <td>{customer.dedicated}</td>

@@ -26,8 +26,8 @@ const overview = {
 };
 
 const topCustomer = {
-  id: "CORP-REAL-01",
-  name: "한빛산업",
+  id: "000fd5948a0ec34ce399733e5f9ce20477d0037286c99f4e",
+  name: "한빛산업주식회사대구본점",
   industry: "제조업",
   region: "서울",
   dedicated: "Y",
@@ -61,12 +61,19 @@ describe("OverviewPage", () => {
 
     render(<OverviewPage onPageChange={vi.fn()} />);
 
-    expect(await screen.findByText("한빛산업")).toBeInTheDocument();
+    const customerName = await screen.findByRole("button", { name: /기업명 전체 보기/ });
+    expect(customerName).toHaveTextContent(/^한빛산업주식회사$/);
+    fireEvent.click(customerName);
+    expect(customerName).toHaveTextContent(topCustomer.name);
+    const customerId = screen.getByRole("button", { name: /법인ID 전체 보기/ });
+    expect(customerId).toHaveTextContent(/^000fd594$/);
+    fireEvent.click(customerId);
+    expect(customerId).toHaveTextContent(topCustomer.id);
     expect(screen.getByText("27")).toBeInTheDocument();
     expect(screen.getByText("63.3%")).toBeInTheDocument();
     expect(screen.getByText("18.4%")).toBeInTheDocument();
     expect(screen.getByText("12.35")).toBeInTheDocument();
-    expect(screen.getByText("CRM 관리 우선순위 점수")).toBeInTheDocument();
+    expect(screen.getByText("CRM 우선순위 점수")).toBeInTheDocument();
     expect(screen.queryByText("알파코")).not.toBeInTheDocument();
   });
 
@@ -81,7 +88,7 @@ describe("OverviewPage", () => {
     const onPageChange = vi.fn();
 
     render(<OverviewPage onPageChange={onPageChange} />);
-    await screen.findByText("한빛산업");
+    await screen.findByRole("button", { name: /기업명 전체 보기/ });
     fireEvent.click(screen.getByRole("button", { name: "관리 우선순위" }));
     fireEvent.click(screen.getByRole("button", { name: "약화 신호 보기" }));
 

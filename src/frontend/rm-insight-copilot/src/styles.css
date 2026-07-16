@@ -494,9 +494,21 @@ button,
   line-height: 1.6;
 }
 
+.focus-customer-id {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
 .focus-meta {
   display: flex;
   align-items: flex-end;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.8rem;
 }
@@ -740,16 +752,18 @@ button,
 }
 
 .kpi-detail {
-  display: inline-flex;
+  display: inline-block;
   align-self: flex-start;
-  width: fit-content;
-  max-width: 100%;
+  width: auto;
+  max-width: none;
   border-radius: 999px;
   padding: 0.38rem 0.56rem;
   background: rgba(233, 251, 247, 0.78);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  line-height: 1.2;
+  line-height: 1.35;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .kpi-value {
@@ -853,6 +867,7 @@ button,
 .action-box {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.8rem;
 }
@@ -885,19 +900,54 @@ button,
 .rank-item strong,
 .signal-row strong,
 .card-topline strong {
+  min-width: 0;
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
+}
+
+.expandable-text {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--collapsed-lines, 1);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.expandable-text:hover,
+.expandable-text:focus-visible {
+  background: rgba(0, 199, 169, 0.1);
+  color: #007865;
+  outline: none;
+}
+
+.expandable-text.is-expanded {
+  display: inline;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .status-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   width: fit-content;
+  max-width: none;
   border-radius: 999px;
   padding: 0.36rem 0.65rem;
   font-size: var(--text-xs);
   font-weight: var(--weight-black);
   letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  word-break: keep-all;
+  text-align: center;
 }
 
 .status-badge.mint { background: var(--mint-soft); color: #007865; }
