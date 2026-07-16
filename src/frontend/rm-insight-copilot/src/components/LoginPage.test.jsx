@@ -20,6 +20,12 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not show the local demo note", () => {
+    render(<LoginPage onLogin={vi.fn()} />);
+
+    expect(screen.queryByText("로컬 시연용 데모 로그인")).not.toBeInTheDocument();
+  });
+
   it("shows an inline error when the submitted demo credentials are rejected", () => {
     const onLogin = vi.fn(() => false);
 

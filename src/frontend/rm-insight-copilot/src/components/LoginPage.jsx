@@ -88,8 +88,6 @@ export default function LoginPage({ onLogin }) {
           <button className="login-submit" type="submit">
             로그인
           </button>
-
-          <p className="login-demo-note">로컬 시연용 데모 로그인</p>
         </form>
       </section>
     </main>

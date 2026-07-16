@@ -240,13 +240,6 @@ button,
   box-shadow: 0 1rem 2rem rgba(0, 168, 142, 0.29);
 }
 
-.login-demo-note {
-  margin: -0.45rem 0 0;
-  color: #84938f;
-  font-size: var(--text-xs);
-  text-align: center;
-}
-
 .splash-screen {
   position: fixed;
   inset: 0;
