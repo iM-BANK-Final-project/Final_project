@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import LoginPage from "./components/LoginPage.jsx";
 import SplashScreen from "./components/SplashScreen.jsx";
 import TopNav from "./components/TopNav.jsx";
 import AiReportPage from "./pages/AiReportPage.jsx";
@@ -15,10 +16,25 @@ const pages = {
   report: AiReportPage
 };
 
+export const DEMO_SESSION_KEY = "rm-copilot-demo-authenticated";
+
+const DEMO_USERNAME = "test";
+const DEMO_PASSWORD = "1234";
+
+function hasAuthenticatedSession() {
+  try {
+    return window.sessionStorage.getItem(DEMO_SESSION_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState("overview");
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-  const [showSplash, setShowSplash] = useState(true);
+  const [entryPhase, setEntryPhase] = useState(() =>
+    hasAuthenticatedSession() ? "service" : "login"
+  );
   const ActivePage = pages[activePage];
 
   const openRecommendation = (corporateId) => {
@@ -27,11 +43,33 @@ export default function App() {
   };
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setShowSplash(false), 2700);
-    return () => window.clearTimeout(timer);
-  }, []);
+    if (entryPhase !== "splash") return undefined;
 
-  if (showSplash) {
+    const timer = window.setTimeout(() => setEntryPhase("service"), 2700);
+    return () => window.clearTimeout(timer);
+  }, [entryPhase]);
+
+  const handleLogin = (username, password) => {
+    if (username !== DEMO_USERNAME || password !== DEMO_PASSWORD) {
+      return false;
+    }
+
+    try {
+      window.sessionStorage.setItem(DEMO_SESSION_KEY, "true");
+    } catch {
+      // Storage may be unavailable in restricted browser modes; the current
+      // in-memory demo session can still continue.
+    }
+
+    setEntryPhase("splash");
+    return true;
+  };
+
+  if (entryPhase === "login") {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  if (entryPhase === "splash") {
     return <SplashScreen />;
   }
 
