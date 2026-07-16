@@ -68,6 +68,26 @@ relationship_segment_stability_2023_2024.csv
 
 실제 데이터에서 2023년 세그먼트 수를 모두 재현했고, 2024년 동일유형 유지율은 80.01%, ARI는 0.5866입니다.
 
+## Run the RM Web Service Locally
+
+서비스 데이터베이스를 적재할 때 수익성 CSV는 `df_profit`에서 `법인ID`, `기준월`, `V_FTP_12M`, `V_FTP_12M_방어가치` 열을 내보내 준비합니다. 아래 명령의 `/path/to/법인월별_FTP수익성.csv`를 해당 파일의 실제 경로로 바꿉니다.
+
+```bash
+conda run -n final python -m src.backend.load_service_database \
+  --source /path/to/iM뱅크데이터_거시경제지표포함.csv \
+  --risk-scores outputs/persistent_weakening_baseline/validation_scores.csv \
+  --segment-panel outputs/segment_model_ablation/segment_modeling_panel.csv \
+  --profitability /path/to/법인월별_FTP수익성.csv \
+  --shap-local outputs/persistent_weakening_interpretation/shap_local_top_rows.csv \
+  --database outputs/rm_service/rm_service.sqlite
+
+RM_SERVICE_DB_PATH=outputs/rm_service/rm_service.sqlite \
+  conda run -n final uvicorn src.backend.app:app --host 127.0.0.1 --port 8000
+
+cd src/frontend/rm-insight-copilot
+npm run dev
+```
+
 ## Service Flow
 
 ```text

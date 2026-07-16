@@ -1,7 +1,7 @@
 import { BarChart3, FileText, Lightbulb, ListChecks } from "lucide-react";
 
 const navItems = [
-  { id: "risk", label: "금융관계 휴면화 예측", icon: BarChart3 },
+  { id: "risk", label: "지속거래약화 예측", icon: BarChart3 },
   { id: "priority", label: "CRM 우선순위", icon: ListChecks },
   { id: "recommendations", label: "맞춤 추천", icon: Lightbulb },
   { id: "report", label: "AI 리포트", icon: FileText }

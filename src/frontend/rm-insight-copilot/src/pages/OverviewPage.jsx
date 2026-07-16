@@ -1,11 +1,41 @@
+import ExpandableText from "../components/ExpandableText.jsx";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTrendChart from "../components/MiniTrendChart.jsx";
+import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
-import { customers, monthlyTrend, signalSummary } from "../data/mockData.js";
+import { useApi } from "../hooks/useApi.js";
+
+const percentFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
+const scoreFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
+const signalTones = ["mint", "blue", "amber", "coral", "gray"];
 
 export default function OverviewPage({ onPageChange }) {
-  const topCustomer = customers[0];
+  const overviewState = useApi("/api/overview");
+  const customerState = useApi("/api/customers", { page: 1, page_size: 1 });
+
+  if (overviewState.loading || customerState.loading) {
+    return <LoadingState />;
+  }
+
+  if (overviewState.error || customerState.error) {
+    return (
+      <ErrorState
+        error={overviewState.error || customerState.error}
+        onRetry={() => {
+          overviewState.retry();
+          customerState.retry();
+        }}
+      />
+    );
+  }
+
+  const overview = overviewState.data;
+  const topCustomer = customerState.data?.items?.[0];
+
+  if (!overview || !topCustomer) {
+    return <EmptyState message="표시할 관리 대상이 없습니다." />;
+  }
 
   return (
     <main className="page">
@@ -28,23 +58,47 @@ export default function OverviewPage({ onPageChange }) {
         <article className="focus-panel">
           <div>
             <span className="summary-label">오늘의 관리 포커스</span>
-            <h2>{topCustomer.name}</h2>
-            <p>{topCustomer.summary}</p>
+            <h2>
+              <ExpandableText text={topCustomer.name} label="기업명" />
+            </h2>
+            <small className="focus-customer-id">
+              법인ID <ExpandableText text={topCustomer.id} label="법인ID" />
+            </small>
+            <p>{topCustomer.weakeningType} 신호가 관찰되어 조기관리 검토가 필요합니다.</p>
           </div>
           <div className="focus-meta">
             <div>
-              <span>금융관계 약화 위험</span>
-              <strong>{topCustomer.risk}%</strong>
+              <span>지속거래약화 위험</span>
+              <strong>{percentFormatter.format(topCustomer.risk)}%</strong>
             </div>
             <StatusBadge tone="lime">{topCustomer.weakeningType}</StatusBadge>
           </div>
         </article>
 
         <section className="kpi-grid compact">
-          <KpiCard label="조기관리 대상" value="196" detail="전월 대비 +12" />
-          <KpiCard label="평균 위험" value="52%" detail="상위 위험군 기준" tone="lime" />
-          <KpiCard label="고위험 비중" value="18.4%" detail="risk 75% 이상" tone="amber" />
-          <KpiCard label="우선관리 금액" value="128.4억" detail="고객가치 대리지표" tone="blue" />
+          <KpiCard
+            label="조기관리 대상"
+            value={overview.managedCustomerCount.toLocaleString("ko-KR")}
+            detail={`${overview.asOfMonth} 기준`}
+          />
+          <KpiCard
+            label="평균 위험"
+            value={`${percentFormatter.format(overview.averageRisk)}%`}
+            detail="지속거래약화 위험 평균"
+            tone="lime"
+          />
+          <KpiCard
+            label="고위험 비중"
+            value={`${percentFormatter.format(overview.highRiskShare)}%`}
+            detail="고위험 고객 비중"
+            tone="amber"
+          />
+          <KpiCard
+            label="CRM 우선순위 점수"
+            value={scoreFormatter.format(overview.priorityValueTotal)}
+            detail="RM 운영 순서용 합산 점수"
+            tone="blue"
+          />
         </section>
       </section>
 
@@ -55,16 +109,18 @@ export default function OverviewPage({ onPageChange }) {
             title="월별 지속거래약화 위험"
             description="기준월별 rolling scoring 흐름으로 관리 대상 변화를 확인합니다."
           />
-          <MiniTrendChart data={monthlyTrend} />
+          <MiniTrendChart data={overview.monthlyTrend} />
         </article>
         <article className="panel">
           <SectionHeader eyebrow="Signals" title="주요 약화 신호" />
           <div className="rank-list">
-            {signalSummary.map((signal, index) => (
+            {overview.signalSummary.map((signal, index) => (
               <div className="rank-item" key={signal.label}>
                 <span>{index + 1}</span>
                 <strong>{signal.label}</strong>
-                <StatusBadge tone={signal.tone}>{signal.value}%</StatusBadge>
+                <StatusBadge tone={signalTones[index % signalTones.length]}>
+                  {signal.value}건
+                </StatusBadge>
               </div>
             ))}
           </div>

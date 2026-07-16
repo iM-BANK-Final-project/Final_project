@@ -1,8 +1,28 @@
+import { useState } from "react";
+
+import ExpandableText from "../components/ExpandableText.jsx";
+import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
-import { recommendations } from "../data/mockData.js";
+import { useApi } from "../hooks/useApi.js";
 
-export default function RecommendationsPage() {
+export default function RecommendationsPage({ selectedCustomerId }) {
+  const [segment, setSegment] = useState("");
+  const [weakeningType, setWeakeningType] = useState("");
+  const optionsState = useApi("/api/filter-options");
+  const recommendationsState = useApi("/api/recommendations", {
+    segment,
+    weakening_type: weakeningType
+  });
+
+  const recommendations = recommendationsState.data?.items ?? [];
+  const selectedRecommendation = recommendations.find((item) => item.id === selectedCustomerId);
+  const orderedRecommendations = selectedRecommendation
+    ? [selectedRecommendation, ...recommendations.filter((item) => item.id !== selectedCustomerId)]
+    : recommendations;
+  const loading = optionsState.loading || recommendationsState.loading;
+  const error = optionsState.error || recommendationsState.error;
+
   return (
     <main className="page">
       <SectionHeader
@@ -11,24 +31,40 @@ export default function RecommendationsPage() {
         description="자동 판매가 아니라 RM이 다음 접촉과 상담 포인트를 빠르게 고르도록 돕습니다."
       />
       <div className="filter-bar">
-        <select defaultValue="전체 세그먼트">
-          <option>전체 세그먼트</option>
-          <option>고가치 성장형</option>
-          <option>여신 의존형</option>
+        <select aria-label="세그먼트" value={segment} onChange={(event) => setSegment(event.target.value)}>
+          <option value="">전체 세그먼트</option>
+          {(optionsState.data?.segments ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
         </select>
-        <select defaultValue="전체 약화 유형">
-          <option>전체 약화 유형</option>
-          <option>예금잔액 약화</option>
-          <option>외환거래 감소</option>
-          <option>복수 지표 약화</option>
+        <select aria-label="약화유형" value={weakeningType} onChange={(event) => setWeakeningType(event.target.value)}>
+          <option value="">전체 약화 유형</option>
+          {(optionsState.data?.weakeningTypes ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
         </select>
       </div>
+      {loading && <LoadingState />}
+      {error && (
+        <ErrorState
+          error={error}
+          onRetry={() => {
+            optionsState.retry();
+            recommendationsState.retry();
+          }}
+        />
+      )}
+      {!loading && !error && recommendations.length === 0 && (
+        <EmptyState message="조건에 맞는 추천 전략이 없습니다." />
+      )}
       <div className="recommendation-grid">
-        {recommendations.map((item) => (
+        {orderedRecommendations.map((item) => (
           <article className="recommendation-card" key={item.id}>
             <div className="card-topline">
               <div>
-                <strong>{item.name}</strong>
+                <strong>
+                  <ExpandableText text={item.name} label="기업명" />
+                </strong>
                 <small>{item.segment}</small>
               </div>
               <StatusBadge tone={item.priority === "High" ? "coral" : "lime"}>
