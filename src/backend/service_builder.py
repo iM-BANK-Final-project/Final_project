@@ -20,6 +20,29 @@ VALUE_NUMERIC_COLUMNS = (
     "핵심거래활동금액",
     "상품관계폭",
 )
+PRODUCT_RELATIONSHIP_COLUMNS = (
+    "요구불예금좌수",
+    "거치식예금좌수",
+    "적립식예금좌수",
+    "수익증권좌수",
+    "신탁좌수",
+    "퇴직연금좌수",
+    "여신_운전자금대출좌수",
+    "운전_할인어음좌수",
+    "운전_당좌대출좌수",
+    "운전_일반자금대출좌수",
+    "운전_무역금융좌수",
+    "운전_주택자금대출좌수",
+    "운전_기업구매자금대출좌수",
+    "운전_외상매출채권담보대출좌수",
+    "운전_기타운전자금대출좌수",
+    "여신_시설자금대출좌수",
+    "시설_일반자금대출좌수",
+    "시설_에너지절약시설대출좌수",
+    "시설_주택자금대출좌수",
+    "시설_기타시설자금대출좌수",
+    "신용카드개수",
+)
 VALUE_SCORE_COLUMNS = (
     "수신점수",
     "여신점수",
@@ -93,12 +116,59 @@ def _normalize_month_value(value: object) -> str | None:
 
 def normalize_month(series: pd.Series) -> pd.Series:
     """Normalize supported monthly representations to ``YYYY-MM`` strings."""
-    normalized = series.map(_normalize_month_value)
+    text = series.astype("string").str.strip()
+    compact = text.str.fullmatch(r"\d{6}").fillna(False)
+    text = text.mask(compact, text.str.slice(0, 4) + "-" + text.str.slice(4, 6))
+    parsed = pd.to_datetime(text, errors="coerce", format="mixed")
+    normalized = parsed.dt.to_period("M").astype("string")
     invalid = normalized.isna()
     if invalid.any():
         examples = series.loc[invalid].head(5).tolist()
         raise ValueError(f"기준월 형식 위반: YYYY-MM으로 변환할 수 없습니다: {examples}")
-    return normalized.astype("string")
+    return normalized
+
+
+def _ensure_product_relationship_width(source: pd.DataFrame) -> pd.DataFrame:
+    """Use an explicit product-width column or derive it from product counts."""
+    if "상품관계폭" in source.columns:
+        return source
+
+    configured_amount_columns = [
+        column for column in SegmentationConfig().amount_cols if column in source.columns
+    ]
+    available_product_columns = [
+        column for column in PRODUCT_RELATIONSHIP_COLUMNS if column in source.columns
+    ]
+    if not available_product_columns and not configured_amount_columns:
+        raise ValueError("원천 데이터 필수 컬럼이 없습니다: ['상품관계폭']")
+
+    if available_product_columns:
+        product_counts = source.loc[:, available_product_columns].apply(
+            pd.to_numeric,
+            errors="coerce",
+        )
+        if not product_counts.isna().any().any():
+            if product_counts.lt(0).any().any():
+                raise ValueError("상품관계폭 파생 원천 컬럼에 음수가 있습니다.")
+            work = source.copy()
+            work["상품관계폭"] = product_counts.gt(0).sum(axis=1)
+            return work
+
+    relationship_amounts = source.loc[:, configured_amount_columns].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+    if relationship_amounts.isna().any().any():
+        invalid = relationship_amounts.columns[
+            relationship_amounts.isna().any()
+        ].tolist()
+        raise ValueError(f"상품관계폭 파생 원천 금액 컬럼에 결측이 있습니다: {invalid}")
+    if relationship_amounts.lt(0).any().any():
+        raise ValueError("상품관계폭 파생 원천 금액 컬럼에 음수가 있습니다.")
+
+    work = source.copy()
+    work["상품관계폭"] = relationship_amounts.gt(0).sum(axis=1)
+    return work
 
 
 def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
@@ -110,7 +180,6 @@ def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
         "사업장_시도",
         "법인_고객등급",
         "전담고객여부",
-        "상품관계폭",
         *config.amount_cols,
     )
     _require_columns(inputs.source, source_columns, "원천 데이터")
@@ -150,12 +219,13 @@ def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
         "SHAP",
     )
 
-    source = inputs.source.copy()
+    source = _ensure_product_relationship_width(inputs.source.copy())
     risk = inputs.risk_scores.loc[inputs.risk_scores["모델"].eq(MODEL_NAME)].copy()
     segment = inputs.segment_panel.copy()
     profitability = inputs.profitability.copy()
     shap = inputs.shap_local.loc[inputs.shap_local["모델"].eq(MODEL_NAME)].copy()
     source["기준년월"] = normalize_month(source["기준년월"])
+    source["사업장_시도"] = source["사업장_시도"].fillna("미상")
     risk["기준년월"] = normalize_month(risk["기준년월"])
     segment["기준년월"] = normalize_month(segment["기준년월"])
     profitability["기준월"] = normalize_month(profitability["기준월"])
@@ -619,6 +689,7 @@ def build_service_tables(
             "feature": "feature_name",
         }
     )
+    shap_table = shap_table.dropna(subset=["feature_value"])
 
     snapshots = joined.loc[
         :,
@@ -662,6 +733,26 @@ def build_service_tables(
     weakening_type = snapshots.pop("weakening_type")
     snapshots.insert(10, "weakening_type", weakening_type)
     recommendations = build_recommendations(snapshots, weakening_signals)
+    signal_distribution = snapshots["weakening_type"].value_counts().sort_index()
+    monthly_summaries = pd.DataFrame(
+        [
+            {
+                "as_of_month": month,
+                "managed_customer_count": int(len(snapshots)),
+                "average_risk": float(snapshots["risk_probability"].mean()),
+                "high_risk_share": float(snapshots["risk_level"].eq("HIGH").mean()),
+                "priority_value_total": float(snapshots["crm_priority_score"].sum()),
+                "signal_distribution_json": json.dumps(
+                    {
+                        str(label): int(value)
+                        for label, value in signal_distribution.items()
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            }
+        ]
+    )
     return {
         "customers": customers.reset_index(drop=True),
         "risk_scores": risk_table.reset_index(drop=True),
@@ -671,4 +762,5 @@ def build_service_tables(
         "shap_factors": shap_table.reset_index(drop=True),
         "recommendations": recommendations.reset_index(drop=True),
         "customer_snapshots": snapshots.reset_index(drop=True),
+        "monthly_summaries": monthly_summaries,
     }

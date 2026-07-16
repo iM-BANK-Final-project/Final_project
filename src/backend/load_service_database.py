@@ -96,6 +96,14 @@ SERVICE_TABLE_COLUMNS = {
         "region",
         "dedicated_yn",
     ),
+    "monthly_summaries": (
+        "as_of_month",
+        "managed_customer_count",
+        "average_risk",
+        "high_risk_share",
+        "priority_value_total",
+        "signal_distribution_json",
+    ),
 }
 
 

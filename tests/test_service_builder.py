@@ -237,6 +237,7 @@ def test_build_service_tables_uses_risk_population_and_contract_names():
         "shap_factors",
         "recommendations",
         "customer_snapshots",
+        "monthly_summaries",
     }
     snapshots = tables["customer_snapshots"].set_index("corporate_id")
     assert snapshots.index.tolist() == ["B", "C"]
