@@ -34,6 +34,8 @@ data/raw/
 data/private/
 *.xlsx
 *.xls
+*.pptx
+*.ndjson
 *.csv
 *.tsv
 *.parquet
