@@ -70,14 +70,20 @@ relationship_segment_stability_2023_2024.csv
 
 ## Run the RM Web Service Locally
 
-서비스 데이터베이스를 적재할 때 수익성 CSV는 `df_profit`에서 `법인ID`, `기준월`, `V_FTP_12M`, `V_FTP_12M_방어가치` 열을 내보내 준비합니다. 아래 명령의 `/path/to/법인월별_FTP수익성.csv`를 해당 파일의 실제 경로로 바꿉니다.
+저장소의 기존 원천·위험점수·금리·SHAP CSV에서 세그먼트와 FTP 수익성 입력을 파생하고 서비스 데이터베이스를 한 번에 적재합니다. 모델 재학습은 수행하지 않습니다.
+
+```bash
+conda run -n final python -m src.backend.prepare_service_database
+```
+
+기본 출력은 `outputs/rm_service_inputs/segment_panel.csv`, `outputs/rm_service_inputs/profitability.csv`, `outputs/rm_service/rm_service.sqlite`입니다. 별도 위치의 사전 생성 산출물을 직접 적재해야 할 때만 아래 저수준 명령을 사용합니다.
 
 ```bash
 conda run -n final python -m src.backend.load_service_database \
-  --source /path/to/iM뱅크데이터_거시경제지표포함.csv \
+  --source outputs/iM뱅크데이터_거시경제지표포함.csv \
   --risk-scores outputs/persistent_weakening_baseline/validation_scores.csv \
-  --segment-panel outputs/segment_model_ablation/segment_modeling_panel.csv \
-  --profitability /path/to/법인월별_FTP수익성.csv \
+  --segment-panel outputs/rm_service_inputs/segment_panel.csv \
+  --profitability outputs/rm_service_inputs/profitability.csv \
   --shap-local outputs/persistent_weakening_interpretation/shap_local_top_rows.csv \
   --database outputs/rm_service/rm_service.sqlite
 
