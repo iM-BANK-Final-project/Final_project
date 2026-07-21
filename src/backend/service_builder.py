@@ -43,6 +43,12 @@ CONTACT_STRATEGIES = {
     "MEDIUM": "RM 계획 접촉",
     "WATCH": "모니터링 후 필요 시 접촉",
 }
+SHAP_FACTOR_COUNT = 10
+SHAP_SCORE_COLUMNS = tuple(
+    column
+    for rank in range(1, SHAP_FACTOR_COUNT + 1)
+    for column in (f"shap_top{rank}_feature", f"shap_top{rank}_value")
+)
 OPERATING_SCORE_COLUMNS = (
     "법인ID",
     "cutoff_month",
@@ -54,12 +60,7 @@ OPERATING_SCORE_COLUMNS = (
     "CTX__업종_중분류__현재",
     "risk_probability",
     *SCORE_CHANGE_COLUMNS.values(),
-    "shap_top1_feature",
-    "shap_top1_value",
-    "shap_top2_feature",
-    "shap_top2_value",
-    "shap_top3_feature",
-    "shap_top3_value",
+    *SHAP_SCORE_COLUMNS,
 )
 CLV_COLUMNS = (
     "법인ID",
@@ -392,9 +393,29 @@ def _apply_score_changes(
 
 
 def _build_shap_table(scores: pd.DataFrame, month: str) -> pd.DataFrame:
+    feature_columns = [
+        f"shap_top{rank}_feature" for rank in range(1, SHAP_FACTOR_COUNT + 1)
+    ]
+    value_columns = [
+        f"shap_top{rank}_value" for rank in range(1, SHAP_FACTOR_COUNT + 1)
+    ]
+    feature_names = scores.loc[:, feature_columns].astype("string").apply(
+        lambda column: column.str.strip()
+    )
+    if feature_names.isna().any().any() or feature_names.eq("").any().any():
+        raise ValueError("운영 점수 SHAP feature 이름에 결측 또는 빈 문자열이 있습니다.")
+    shap_values = scores.loc[:, value_columns].apply(pd.to_numeric, errors="coerce")
+    if shap_values.isna().any().any() or not np.isfinite(
+        shap_values.to_numpy(dtype=float)
+    ).all():
+        raise ValueError("운영 점수 SHAP value는 유한한 숫자여야 합니다.")
+
     rows = []
-    for score in scores.itertuples(index=False):
-        for rank in range(1, 4):
+    normalized_scores = scores.copy()
+    normalized_scores.loc[:, feature_columns] = feature_names
+    normalized_scores.loc[:, value_columns] = shap_values
+    for score in normalized_scores.itertuples(index=False):
+        for rank in range(1, SHAP_FACTOR_COUNT + 1):
             rows.append(
                 {
                     "corporate_id": str(getattr(score, "법인ID")),
@@ -406,7 +427,12 @@ def _build_shap_table(scores: pd.DataFrame, month: str) -> pd.DataFrame:
                     "abs_shap_rank": rank,
                 }
             )
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    expected_ranks = list(range(1, SHAP_FACTOR_COUNT + 1))
+    ranks_by_customer = result.groupby("corporate_id")["abs_shap_rank"].apply(list)
+    if not ranks_by_customer.apply(lambda ranks: ranks == expected_ranks).all():
+        raise ValueError("운영 점수 SHAP 순위는 고객별 1~10이어야 합니다.")
+    return result
 
 
 def build_service_tables(

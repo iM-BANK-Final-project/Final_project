@@ -88,8 +88,7 @@ def _source_frame() -> pd.DataFrame:
 
 
 def _score_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
+    score = {
             "법인ID": ["A"],
             "cutoff_month": [202512],
             "score_eligible": [True],
@@ -103,14 +102,11 @@ def _score_frame() -> pd.DataFrame:
             "자동이체_최근3대이전9_변화율_pct": [-35.0],
             "채널_최근3대이전9_변화율_pct": [-30.0],
             "카드_최근3대이전9_변화율_pct": [-25.0],
-            "shap_top1_feature": ["d1"],
-            "shap_top1_value": [0.3],
-            "shap_top2_feature": ["c1"],
-            "shap_top2_value": [0.2],
-            "shap_top3_feature": ["a1"],
-            "shap_top3_value": [0.1],
         }
-    )
+    for rank in range(1, 11):
+        score[f"shap_top{rank}_feature"] = [f"feature_{rank}"]
+        score[f"shap_top{rank}_value"] = [0.11 - rank / 100]
+    return pd.DataFrame(score)
 
 
 def _clv_frame() -> pd.DataFrame:
@@ -217,9 +213,17 @@ def test_load_service_database_builds_atomic_completed_snapshot(tmp_path):
             "SELECT clv_risk, potential_loss, defense_rank "
             "FROM customer_snapshots WHERE corporate_id='A'"
         ).fetchone()
+        shap_ranks = [
+            row[0]
+            for row in connection.execute(
+                "SELECT abs_shap_rank FROM shap_factors "
+                "WHERE corporate_id='A' ORDER BY abs_shap_rank"
+            )
+        ]
     assert snapshot["clv_risk"] == 70.0
     assert snapshot["potential_loss"] == 30.0
     assert snapshot["defense_rank"] == 1
+    assert shap_ranks == list(range(1, 11))
 
 
 def test_load_service_database_records_hashes_paths_and_row_counts(tmp_path):

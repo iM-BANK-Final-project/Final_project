@@ -54,8 +54,7 @@ def _source() -> pd.DataFrame:
 
 
 def _operating_scores() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
+    score = {
             "법인ID": ["A", "B", "C"],
             "cutoff_month": [202512, 202512, 202512],
             "score_eligible": [False, True, True],
@@ -73,14 +72,11 @@ def _operating_scores() -> pd.DataFrame:
             "자동이체_최근3대이전9_변화율_pct": [-60.0, -35.0, -10.0],
             "채널_최근3대이전9_변화율_pct": [-50.0, -30.0, -5.0],
             "카드_최근3대이전9_변화율_pct": [-40.0, -25.0, 5.0],
-            "shap_top1_feature": ["d1", "d1", "d1"],
-            "shap_top1_value": [0.3, 0.2, 0.1],
-            "shap_top2_feature": ["c1", "c1", "c1"],
-            "shap_top2_value": [0.2, 0.1, -0.1],
-            "shap_top3_feature": ["a1", "a1", "a1"],
-            "shap_top3_value": [0.1, -0.2, 0.05],
         }
-    )
+    for rank in range(1, 11):
+        score[f"shap_top{rank}_feature"] = [f"feature_{rank}"] * 3
+        score[f"shap_top{rank}_value"] = [0.11 - rank / 100] * 3
+    return pd.DataFrame(score)
 
 
 def _clv() -> pd.DataFrame:
@@ -156,8 +152,13 @@ def test_build_service_tables_uses_final_segments_shap_and_four_axis_signals():
     segments = tables["segments"].set_index("corporate_id")
     assert segments.loc["B", "segment_name"] == "저거래·저수신형"
     assert segments.loc["B", "segment_transition"] == "복합고관계형 → 저거래·저수신형"
-    assert len(tables["shap_factors"]) == 6
-    assert tables["shap_factors"]["feature_value"].isna().all()
+    shap = tables["shap_factors"]
+    assert len(shap) == 20
+    assert shap.groupby("corporate_id")["abs_shap_rank"].apply(list).tolist() == [
+        list(range(1, 11)),
+        list(range(1, 11)),
+    ]
+    assert shap["feature_value"].isna().all()
     assert set(tables["weakening_signals"]["signal_type"]) == {
         "입출금",
         "자동이체",
@@ -175,6 +176,16 @@ def test_build_service_tables_rejects_duplicate_source_month():
     inputs.source.loc[len(inputs.source)] = inputs.source.iloc[-1]
 
     with pytest.raises(ValueError, match=r"법인ID\+기준년월 중복"):
+        build_service_tables(inputs)
+
+
+def test_build_service_tables_requires_all_shap_top10_columns():
+    inputs = _inputs()
+    inputs.operating_scores = inputs.operating_scores.drop(
+        columns="shap_top10_value"
+    )
+
+    with pytest.raises(ValueError, match="shap_top10_value"):
         build_service_tables(inputs)
 
 
