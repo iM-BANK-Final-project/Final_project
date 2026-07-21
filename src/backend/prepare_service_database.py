@@ -35,6 +35,16 @@ EXPECTED_SOURCE_FIRMS = 3372
 EXPECTED_ELIGIBLE_FIRMS = 3341
 
 
+def _write_clv_artifact(clv: pd.DataFrame, path: Path) -> None:
+    """Write floats with enough precision for strict score/CLV reconciliation."""
+    clv.to_csv(
+        path,
+        index=False,
+        encoding="utf-8-sig",
+        float_format="%.17g",
+    )
+
+
 def _require_columns(
     frame: pd.DataFrame,
     columns: tuple[str, ...],
@@ -186,7 +196,7 @@ def prepare_and_load_service_database(
 
     derived_dir.mkdir(parents=True, exist_ok=True)
     clv_path = derived_dir / "clv_202512.csv"
-    clv.to_csv(clv_path, index=False, encoding="utf-8-sig", float_format="%.10f")
+    _write_clv_artifact(clv, clv_path)
     return load_service_database(
         ServiceSourcePaths(
             source=source_path,

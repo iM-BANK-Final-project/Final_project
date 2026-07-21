@@ -7,6 +7,7 @@ from src.backend.prepare_service_database import (
     DEFAULT_BANK_RATES_PATH,
     DEFAULT_FTP_PATH,
     DEFAULT_RISK_SCORES_PATH,
+    _write_clv_artifact,
     build_final_clv,
     filter_eligible_operating_scores,
     validate_source_panel,
@@ -144,3 +145,22 @@ def test_build_final_clv_keeps_source_and_eligible_population_locks_separate():
     )
 
     assert result["법인ID"].tolist() == ["A"]
+
+
+def test_clv_artifact_preserves_risk_probability_for_strict_join(tmp_path):
+    probability = 0.017202704348169298
+    frame = pd.DataFrame(
+        {
+            "법인ID": ["A"],
+            "risk_probability": [probability],
+            "CLV_Risk": [123.45678901234567],
+        }
+    )
+    path = tmp_path / "clv.csv"
+
+    _write_clv_artifact(frame, path)
+    restored = pd.read_csv(path)
+
+    assert restored.loc[0, "risk_probability"] == pytest.approx(
+        probability, rel=0, abs=1e-12
+    )
