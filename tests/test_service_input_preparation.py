@@ -62,7 +62,7 @@ def _bank_rates() -> pd.DataFrame:
 
 def test_default_paths_point_to_final_repository_artifacts():
     assert DEFAULT_RISK_SCORES_PATH == Path(
-        "src/models/web_m12_intervene_v2_scores_202512_all_3372.csv"
+        "src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv"
     )
     assert DEFAULT_FTP_PATH == Path("outputs/iM뱅크_월별_추정FTP_2023_2025.csv")
     assert DEFAULT_BANK_RATES_PATH == Path("outputs/예대금리차2023~2025_순.csv")

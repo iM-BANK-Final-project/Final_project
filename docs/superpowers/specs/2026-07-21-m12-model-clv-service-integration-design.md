@@ -69,7 +69,7 @@ Locked target results are:
 - Segment identifiers and industry fields are explanation and stability-audit fields, not model inputs.
 - `risk_probability` means the probability of `Y_INTERVENE_M12_v2` during the next six months. It is not a probability of closure, default, or confirmed churn.
 
-The service consumes `src/models/web_m12_intervene_v2_scores_202512_all_3372.csv`, filters `score_eligible == True`, verifies exactly 3,341 unique firms, and calculates all risk ranks inside that eligible population. The 31 ineligible firms are excluded from the database, API, KPIs, filters, and UI.
+The active service consumes `src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv`, verifies exactly 3,341 unique eligible firms, and calculates all operating outputs inside that population. The 31 ineligible firms are excluded before export and remain excluded from the database, API, KPIs, filters, and UI.
 
 ## 5. FISIM Profitability Contract
 
@@ -133,7 +133,7 @@ The retired `customer_value_proxy`, `risk_probability × customer_value_proxy`, 
 The service database preparation command consumes:
 
 - Corporate monthly source: `outputs/iM뱅크데이터_거시경제지표포함.csv`
-- Operating scores: `src/models/web_m12_intervene_v2_scores_202512_all_3372.csv`
+- Operating scores: `src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv`
 - Monthly FTP: `outputs/iM뱅크_월별_추정FTP_2023_2025.csv`
 - Monthly loan and saving-deposit rates: `outputs/예대금리차2023~2025_순.csv`
 

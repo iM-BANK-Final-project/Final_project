@@ -4,6 +4,10 @@
 
 Expand the saved AI report from three local SHAP factors to ten factors for every one of the 3,341 eligible operating customers. Display all ten factors at once and identify the section with a small title.
 
+## Approved Model Rebuild
+
+The original web pipeline that produced the retired Top 3 score artifact was unavailable. The user explicitly approved rebuilding the operating model from the final profitability notebook and recalculating risk, CLV, potential loss, and defense rank together. The active operating artifact is `src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv` and contains only the 3,341 eligible customers.
+
 ## Source and Ranking Contract
 
 `src/models/web_202512_m12_final_model.ipynb` remains the source of truth for operating-score generation. Its local explanation step must calculate model contributions for all 56 features, exclude the LightGBM expected-value column, rank features by descending absolute contribution, and export ranks 1 through 10.
@@ -15,7 +19,7 @@ shap_top{n}_feature
 shap_top{n}_value
 ```
 
-The probability, eligibility, risk ranking, and the remaining score fields must not change when only the SHAP export width changes.
+Within one regenerated run, probability, SHAP, CLV, and defense priority must all derive from the same rebuilt model and calibrator.
 
 ## Service Data Contract
 

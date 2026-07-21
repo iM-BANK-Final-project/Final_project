@@ -25,7 +25,7 @@ from src.backend.m12_clv import (
 
 DEFAULT_SOURCE_PATH = Path("outputs/iM뱅크데이터_거시경제지표포함.csv")
 DEFAULT_RISK_SCORES_PATH = Path(
-    "src/models/web_m12_intervene_v2_scores_202512_all_3372.csv"
+    "src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv"
 )
 DEFAULT_FTP_PATH = Path("outputs/iM뱅크_월별_추정FTP_2023_2025.csv")
 DEFAULT_BANK_RATES_PATH = Path("outputs/예대금리차2023~2025_순.csv")

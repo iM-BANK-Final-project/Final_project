@@ -59,8 +59,9 @@ Y_INTERVENE_M12_v2 = W_D AND (W_A OR W_C OR W_K)
 - Train: 43,499행
 - Test cutoff: 2025-06, 3,346행, 양성 119행
 - Operating cutoff: 2025-12
-- Input score artifact: `src/models/web_m12_intervene_v2_scores_202512_all_3372.csv`
+- Input score artifact: `src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv`
 - Service population: `score_eligible=True`인 정확히 3,341개; 나머지 31개 완전 제외
+- Local explanation: 고객별 절대 기여도 기준 `SHAP Top 10`, DB 총 33,410행
 
 `risk_probability`는 향후 6개월 지속거래약화 target 발생 확률이며 실제 해지·부도·확정 휴면 확률이 아니다. 업종·세그먼트는 설명 및 안정성 감사용이지 모델 입력이 아니다.
 

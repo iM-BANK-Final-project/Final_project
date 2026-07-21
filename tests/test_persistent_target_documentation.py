@@ -37,6 +37,16 @@ class PersistentTargetDocumentationTest(unittest.TestCase):
             self.assertNotIn("0.2959", text, path)
             self.assertNotIn("75.5%", text, path)
 
+    def test_active_docs_name_the_eligible_top10_operating_artifact(self):
+        for path in ACTIVE_DOCS:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(
+                "web_m12_intervene_v2_scores_202512_eligible_3341.csv",
+                text,
+                path,
+            )
+            self.assertIn("SHAP Top 10", text, path)
+
 
 if __name__ == "__main__":
     unittest.main()

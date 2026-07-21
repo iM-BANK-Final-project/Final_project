@@ -39,7 +39,7 @@ D가 판정 가능하고 A/C/K 중 하나 이상이 판정 가능할 때만 `sco
 - Operating cutoff: `2025-12`
 - 점수 의미: 향후 6개월 `Y_INTERVENE_M12_v2` 발생 확률
 
-점수는 실제 해지·부도·확정 휴면 확률이 아닙니다. 서비스 입력은 `src/models/web_m12_intervene_v2_scores_202512_all_3372.csv`이며, `score_eligible=True`만 사용합니다.
+점수는 실제 해지·부도·확정 휴면 확률이 아닙니다. 서비스 입력은 재학습 승인 모델로 생성한 `src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv`이며, 적격 3,341개만 포함합니다. 고객별 설명은 절대 기여도 기준 `SHAP Top 10`을 저장합니다.
 
 ## FISIM CLV Priority
 
