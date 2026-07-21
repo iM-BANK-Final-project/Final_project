@@ -21,7 +21,9 @@ CANONICAL_CAVEATS = (
     "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
 )
 EVENT_PROBABILITY_TERMS = re.compile(r"(?:실제\s*)?(?:해지|부도|휴면)\s*확률")
-NEGATED_EVENT_PROBABILITY_SUFFIX = re.compile(r"\s*(?:이|가)?\s*아닙니다")
+NEARBY_EVENT_NEGATION = re.compile(
+    r"^\s*(?:(?:은|는|이|가)?\s*아(?:니|닙)|(?:이)?라고\s*볼\s*수\s*없|(?:으)?로\s*해석하지\s*않)"
+)
 SHAP_TERM = re.compile(r"SHAP", re.IGNORECASE)
 SHAP_QUANTIFIED_CHANGE = re.compile(
     r"(?:\d+(?:\.\d+)?\s*(?:%p|퍼센트포인트|percentage\s+points?|bp|bps|basis\s+points?|%|퍼센트)|\d+(?:\.\d+)?\s*만큼)",
@@ -30,14 +32,16 @@ SHAP_QUANTIFIED_CHANGE = re.compile(
 SHAP_CAUSAL_CONNECTOR = re.compile(r"(?:이므로|따라서|때문(?:에|으로)?|영향(?:으로|때문)?|결과로)")
 RISK_TERM = r"(?:위험(?:도|점수|확률|가능성)?|리스크)"
 RISK_UP_WORDING = re.compile(
-    rf"{RISK_TERM}\s*(?:을|를|은|는|이|가)?\s*(?:높|상승|증가|악화)|악화\s*요인"
+    rf"{RISK_TERM}\s*(?:을|를|은|는|이|가)?\s*(?:\d+(?:\.\d+)?\s*만큼\s*)?(?:높|상승|증가|악화|올리|올렸|올)|악화\s*요인"
 )
 PROTECTIVE_WORDING = re.compile(
-    rf"{RISK_TERM}\s*(?:을|를|은|는|이|가)?\s*(?:낮|하락|감소|완화)|(?:방어|보호)(?:적|\s*(?:요인|효과|신호))"
+    rf"{RISK_TERM}\s*(?:을|를|은|는|이|가)?\s*(?:\d+(?:\.\d+)?\s*만큼\s*)?(?:낮|하락|감소|완화|내리|내렸|내)|(?:방어|보호)(?:적|\s*(?:요인|효과|신호))"
 )
 LOCAL_CLAUSE_BOUNDARY = re.compile(
-    r"[,;]|(?:그러나|하지만|반면|다만|이고|이며|이나)(?=\s)"
+    r"[,;]|(?:그러나|하지만|반면|다만|이고|이며|이나|지만|으나|는데)(?=\s)"
 )
+CONTRAST_MARKERS = frozenset({"그러나", "하지만", "반면", "다만", "지만", "으나", "는데"})
+DIRECTION_ATTRIBUTION = re.compile(r"(?:요인|기여)")
 
 
 class ReportGenerationError(RuntimeError):
@@ -186,7 +190,7 @@ def postprocess_strategy_narrative(
 
 def _normalize_event_probability_term(text: str) -> str:
     def replace(match: re.Match) -> str:
-        if NEGATED_EVENT_PROBABILITY_SUFFIX.match(match.string[match.end() :]):
+        if NEARBY_EVENT_NEGATION.match(match.string[match.end() :]):
             return match.group(0)
         return "지속거래약화 가능성"
 
@@ -205,8 +209,9 @@ def _reject_unsafe_shap_claims(narrative: dict, shap_evidence: dict) -> None:
 
     for text in texts:
         for sentence in re.split(r"(?<=[!?])\s*|(?<!\d)\.(?:\s*|$)|\n+", text):
-            if _has_shap_linked_probability_claim(sentence):
-                raise ValueError("SHAP 값을 확률 또는 비율 변화로 설명할 수 없습니다.")
+            for clause in _local_clauses(sentence):
+                if _has_shap_linked_probability_claim(clause):
+                    raise ValueError("SHAP 값을 확률 또는 비율 변화로 설명할 수 없습니다.")
             for feature, direction, clause in _feature_direction_clauses(sentence, directions):
                 if direction == "risk_down" and RISK_UP_WORDING.search(clause):
                     raise ValueError("SHAP 방향과 반대되는 위험 상승 설명입니다.")
@@ -226,6 +231,10 @@ def _has_shap_linked_probability_claim(sentence: str) -> bool:
         or RISK_UP_WORDING.search(sentence)
         or PROTECTIVE_WORDING.search(sentence)
     )
+
+
+def _local_clauses(sentence: str) -> list[str]:
+    return [clause for clause in LOCAL_CLAUSE_BOUNDARY.split(sentence) if clause]
 
 
 def _feature_direction_clauses(sentence: str, directions: dict[str, str]):
@@ -254,6 +263,10 @@ def _feature_direction_clauses(sentence: str, directions: dict[str, str]):
         boundary = LOCAL_CLAUSE_BOUNDARY.search(
             sentence, start + len(feature), next_feature_start
         )
+        if boundary is not None and boundary.group(0).strip() in CONTRAST_MARKERS:
+            following_clause = sentence[boundary.end() : next_feature_start]
+            if DIRECTION_ATTRIBUTION.search(following_clause):
+                boundary = None
         end = min(
             next_feature_start,
             boundary.start() if boundary is not None else len(sentence),
@@ -282,7 +295,7 @@ def _is_overlapping_limitation(caveat: str) -> bool:
     ):
         return True
     return any(term in caveat for term in ("해지", "부도", "휴면", "지속거래약화")) and any(
-        term in caveat for term in ("확률", "proxy", "예측", "아닌", "아닙니다")
+        term in caveat for term in ("확률", "proxy", "예측", "아닌", "아닙니다", "아니")
     )
 
 

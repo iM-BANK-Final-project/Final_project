@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -217,6 +218,15 @@ def test_generate_strategy_report_allows_correct_mixed_direction_clauses():
     assert result.weakeningDrivers == payload["weakeningDrivers"]
 
 
+def test_generate_strategy_report_allows_contrast_after_risk_down_feature():
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = "여신관계_수준이 낮지만 전체 위험도는 높습니다."
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.weakeningDrivers == payload["weakeningDrivers"]
+
+
 @pytest.mark.parametrize(
     "drivers",
     [
@@ -259,12 +269,24 @@ def test_generate_strategy_report_allows_independent_risk_percentage_with_shap_d
     assert result.weakeningDrivers == payload["weakeningDrivers"]
 
 
+def test_generate_strategy_report_allows_independent_percentage_and_shap_direction_clause():
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = (
+        "지속거래약화 가능성은 80%이며 SHAP은 위험을 높인 모델 기여도입니다."
+    )
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.weakeningDrivers == payload["weakeningDrivers"]
+
+
 @pytest.mark.parametrize(
     "drivers",
     [
         "SHAP 0.31이므로 위험도는 3%p 증가했습니다.",
         "SHAP 값 때문에 리스크가 10bp 상승했습니다.",
         "SHAP 0.2만큼 위험점수가 높아졌습니다.",
+        "SHAP은 위험확률을 0.31만큼 올렸습니다.",
     ],
 )
 def test_generate_strategy_report_rejects_shap_linked_probability_changes(drivers):
@@ -273,6 +295,55 @@ def test_generate_strategy_report_rejects_shap_linked_probability_changes(driver
 
     with pytest.raises(ReportGenerationError):
         generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "해지 확률은 아닙니다.",
+        "해지 확률은 아니며 지속거래약화 가능성을 확인합니다.",
+        "해지 확률이라고 볼 수 없습니다.",
+        "해지 확률로 해석하지 않습니다.",
+    ],
+)
+@pytest.mark.parametrize(
+    "field",
+    [
+        "riskSummary",
+        "valueAssessment",
+        "weakeningDrivers",
+        "contactStrategy",
+        "recommendedActions",
+        "caveats",
+    ],
+)
+def test_generate_strategy_report_never_inverts_common_negated_event_probability_terms(
+    phrase, field
+):
+    payload = valid_narrative()
+    if field == "recommendedActions":
+        payload[field] = [phrase]
+    elif field == "caveats":
+        payload[field] = [phrase]
+    else:
+        payload[field] = phrase
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+    texts = [
+        result.riskSummary,
+        result.valueAssessment,
+        result.weakeningDrivers,
+        result.contactStrategy,
+        *result.recommendedActions,
+        *result.caveats,
+    ]
+
+    assert not any(
+        re.search(r"지속거래약화 가능성(?:은|는|이|가|으로|이라고)?\s*아(?:니|닙)", text)
+        for text in texts
+    )
+    if field != "caveats":
+        assert phrase in texts
 
 
 def test_generate_strategy_report_replaces_overlapping_caveats_with_canonical_set():
