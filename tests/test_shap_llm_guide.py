@@ -12,3 +12,25 @@ def test_shap_llm_guide_matches_fs2_top10_contract():
     assert "FS1_CAT" not in text
     assert "89개" not in text
     assert "CAT_*" not in text
+
+
+def test_shap_llm_guide_states_operational_limits_and_raw_top10_contract():
+    text = Path("src/SHAP_LLM_REPORT_GUIDE.md").read_text(encoding="utf-8")
+
+    assert "16개 기본 피처 + 40개 동적 피처" in text
+    assert "선택된 Top 10" in text
+    assert "전체 모델 피처의 기여 비중이나 확률 변화량이 아니다" in text
+    assert "프롬프트는 값·금액·변화율을 추정하지 말라고 지시한다" in text
+    assert "현재 후처리만으로 생성된 모든" in text
+    assert "숫자가 근거에 기반했는지 완전히 검증하지 못한다" in text
+    assert "RM 또는 원천 근거 확인이 필요하다" in text
+    assert "`shapFactors`는 authoritative context에서 변경하지 않는다" in text
+    assert "`localShapTop10`은 검증된 `rank` 오름차순으로 정렬한다" in text
+    assert "모든 원본 필드를 보존" in text
+    assert "UI와 PDF는 원본의 모든 10개 행을 계속 표시한다" in text
+    assert "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다." in text
+    assert "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다." in text
+    assert "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다." in text
+    assert "정량 %, %p, bp 또는 숫자-만큼" in text
+    assert "일반적인 인과 표현은 프롬프트에서 금지하지만 후처리가 빠짐없이 탐지하지는 않는다" in text
+    assert "특정 피처의 방향과 반대되는" in text
