@@ -377,6 +377,7 @@ def test_generate_strategy_report_allows_top10_internal_absolute_shap_share(driv
         "Top 10 절대 SHAP 합의 31%를 차지하며 SHAP 때문에 위험확률이 31%p 변했습니다.",
         "top10AbsShare는 31%지만 위험확률을 10%p 높였습니다.",
         "Top 10 SHAP이 위험확률의 31%를 차지합니다.",
+        "Top 10 절대 SHAP 합이 위험확률의 31%를 차지합니다.",
         "Top 10 절대 SHAP 합의 31%를 차지하며 위험확률이 31%p 변했습니다.",
     ],
 )

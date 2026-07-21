@@ -244,7 +244,13 @@ def _reject_unsafe_shap_claims(narrative: dict, shap_evidence: dict) -> None:
 
 
 def _has_shap_linked_probability_claim(sentence: str) -> bool:
-    masked = TOP10_SHARE_SPAN.sub(" SHAP_TOP10_SHARE ", sentence)
+    def mask_internal_share(match: re.Match[str]) -> str:
+        matched_text = match.group(0)
+        if re.search(RISK_TERM, matched_text, re.IGNORECASE):
+            return matched_text
+        return " SHAP_TOP10_SHARE "
+
+    masked = TOP10_SHARE_SPAN.sub(mask_internal_share, sentence)
     if not SHAP_TERM.search(masked):
         return False
     if RISK_NUMERIC_CHANGE_OR_RESULT.search(masked) or RISK_CHANGE_THEN_NUMBER.search(
