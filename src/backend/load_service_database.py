@@ -1,4 +1,4 @@
-"""Atomically load validated analytical artifacts into the RM service database."""
+"""Atomically load final M12 service artifacts into SQLite."""
 
 from __future__ import annotations
 
@@ -39,18 +39,18 @@ SERVICE_TABLE_COLUMNS = {
     "segments": (
         "corporate_id",
         "as_of_month",
+        "baseline_segment_name",
         "segment_name",
-        "activity_score",
-        "deposit_score",
-        "loan_score",
+        "segment_transition",
     ),
-    "profitability": (
+    "clv_values": (
         "corporate_id",
         "as_of_month",
-        "profitability_value",
+        "clv_no_risk",
+        "clv_risk",
+        "potential_loss",
         "defense_value",
-        "customer_value_proxy",
-        "value_components_json",
+        "defense_rank",
     ),
     "weakening_signals": (
         "corporate_id",
@@ -85,11 +85,11 @@ SERVICE_TABLE_COLUMNS = {
         "as_of_month",
         "risk_probability",
         "risk_level",
-        "customer_value_proxy",
-        "profitability_value",
+        "clv_no_risk",
+        "clv_risk",
+        "potential_loss",
         "defense_value",
-        "crm_priority_score",
-        "crm_priority_rank",
+        "defense_rank",
         "segment_name",
         "weakening_type",
         "industry",
@@ -101,7 +101,7 @@ SERVICE_TABLE_COLUMNS = {
         "managed_customer_count",
         "average_risk",
         "high_risk_share",
-        "priority_value_total",
+        "potential_loss_total",
         "signal_distribution_json",
     ),
 }
@@ -109,13 +109,11 @@ SERVICE_TABLE_COLUMNS = {
 
 @dataclass(frozen=True)
 class ServiceSourcePaths:
-    """CSV artifact paths required to build a service snapshot."""
+    """CSV artifact paths required to build a final service snapshot."""
 
     source: Path
-    risk_scores: Path
-    segment_panel: Path
-    profitability: Path
-    shap_local: Path
+    operating_scores: Path
+    clv: Path
 
 
 @dataclass(frozen=True)
@@ -145,11 +143,13 @@ def _source_manifest(paths: ServiceSourcePaths) -> dict[str, dict[str, str]]:
 
 def _read_inputs(paths: ServiceSourcePaths) -> ServiceInputs:
     return ServiceInputs(
-        source=pd.read_csv(paths.source),
-        risk_scores=pd.read_csv(paths.risk_scores),
-        segment_panel=pd.read_csv(paths.segment_panel),
-        profitability=pd.read_csv(paths.profitability),
-        shap_local=pd.read_csv(paths.shap_local),
+        source=pd.read_csv(paths.source, dtype={"법인ID": "string"}, low_memory=False),
+        operating_scores=pd.read_csv(
+            paths.operating_scores,
+            dtype={"법인ID": "string"},
+            low_memory=False,
+        ),
+        clv=pd.read_csv(paths.clv, dtype={"법인ID": "string"}, low_memory=False),
     )
 
 
@@ -193,7 +193,7 @@ def load_service_database(
     database_path: Path,
     as_of_month: str | None,
 ) -> LoadSummary:
-    """Build and atomically replace the RM service database from CSV artifacts."""
+    """Build and atomically replace the RM database from final artifacts."""
     manifest = _source_manifest(paths)
     tables = build_service_tables(_read_inputs(paths), as_of_month=as_of_month)
     selected_months = tables["customer_snapshots"]["as_of_month"].unique().tolist()
@@ -244,27 +244,22 @@ def load_service_database(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="RM 분석 산출물을 검증해 SQLite 서비스 DB로 원자적 적재합니다."
+        description="최종 M12·CLV 산출물을 SQLite 서비스 DB로 적재합니다."
     )
     parser.add_argument("--source", required=True, type=Path)
-    parser.add_argument("--risk-scores", required=True, type=Path)
-    parser.add_argument("--segment-panel", required=True, type=Path)
-    parser.add_argument("--profitability", required=True, type=Path)
-    parser.add_argument("--shap-local", required=True, type=Path)
+    parser.add_argument("--operating-scores", required=True, type=Path)
+    parser.add_argument("--clv", required=True, type=Path)
     parser.add_argument("--database", type=Path, default=DEFAULT_DATABASE_PATH)
     parser.add_argument("--as-of-month")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the database loader CLI and return a process exit code."""
     args = _parser().parse_args(argv)
     paths = ServiceSourcePaths(
         source=args.source,
-        risk_scores=args.risk_scores,
-        segment_panel=args.segment_panel,
-        profitability=args.profitability,
-        shap_local=args.shap_local,
+        operating_scores=args.operating_scores,
+        clv=args.clv,
     )
     try:
         summary = load_service_database(paths, args.database, args.as_of_month)

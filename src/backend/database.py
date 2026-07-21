@@ -1,4 +1,4 @@
-"""SQLite connection, schema, and replacement helpers for the RM service."""
+"""SQLite connection, final CLV schema, and atomic replacement helpers."""
 
 from collections.abc import Callable
 from contextlib import suppress
@@ -29,21 +29,21 @@ CREATE TABLE IF NOT EXISTS risk_scores (
 CREATE TABLE IF NOT EXISTS segments (
     corporate_id TEXT NOT NULL,
     as_of_month TEXT NOT NULL,
+    baseline_segment_name TEXT NOT NULL,
     segment_name TEXT NOT NULL,
-    activity_score REAL NOT NULL CHECK (activity_score BETWEEN 0 AND 1),
-    deposit_score REAL NOT NULL CHECK (deposit_score BETWEEN 0 AND 1),
-    loan_score REAL NOT NULL CHECK (loan_score BETWEEN 0 AND 1),
+    segment_transition TEXT NOT NULL,
     PRIMARY KEY (corporate_id, as_of_month),
     FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
 );
 
-CREATE TABLE IF NOT EXISTS profitability (
+CREATE TABLE IF NOT EXISTS clv_values (
     corporate_id TEXT NOT NULL,
     as_of_month TEXT NOT NULL,
-    profitability_value REAL,
-    defense_value REAL,
-    customer_value_proxy REAL NOT NULL CHECK (customer_value_proxy BETWEEN 0 AND 1),
-    value_components_json TEXT NOT NULL,
+    clv_no_risk REAL NOT NULL,
+    clv_risk REAL NOT NULL,
+    potential_loss REAL NOT NULL,
+    defense_value REAL NOT NULL CHECK (defense_value >= 0),
+    defense_rank INTEGER,
     PRIMARY KEY (corporate_id, as_of_month),
     FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
 );
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS shap_factors (
     as_of_month TEXT NOT NULL,
     model_name TEXT NOT NULL,
     feature_name TEXT NOT NULL,
-    feature_value REAL NOT NULL,
+    feature_value REAL,
     shap_value REAL NOT NULL,
     abs_shap_rank INTEGER NOT NULL,
     PRIMARY KEY (corporate_id, as_of_month, model_name, abs_shap_rank),
@@ -90,11 +90,11 @@ CREATE TABLE IF NOT EXISTS customer_snapshots (
     as_of_month TEXT NOT NULL,
     risk_probability REAL NOT NULL CHECK (risk_probability BETWEEN 0 AND 1),
     risk_level TEXT NOT NULL,
-    customer_value_proxy REAL NOT NULL CHECK (customer_value_proxy BETWEEN 0 AND 1),
-    profitability_value REAL,
-    defense_value REAL,
-    crm_priority_score REAL NOT NULL CHECK (crm_priority_score BETWEEN 0 AND 1),
-    crm_priority_rank INTEGER NOT NULL,
+    clv_no_risk REAL NOT NULL,
+    clv_risk REAL NOT NULL,
+    potential_loss REAL NOT NULL,
+    defense_value REAL NOT NULL CHECK (defense_value >= 0),
+    defense_rank INTEGER,
     segment_name TEXT NOT NULL,
     weakening_type TEXT NOT NULL,
     industry TEXT NOT NULL,
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS monthly_summaries (
     managed_customer_count INTEGER NOT NULL,
     average_risk REAL NOT NULL CHECK (average_risk BETWEEN 0 AND 1),
     high_risk_share REAL NOT NULL CHECK (high_risk_share BETWEEN 0 AND 1),
-    priority_value_total REAL NOT NULL,
+    potential_loss_total REAL NOT NULL,
     signal_distribution_json TEXT NOT NULL
 );
 
@@ -126,10 +126,8 @@ CREATE TABLE IF NOT EXISTS import_runs (
 
 CREATE INDEX IF NOT EXISTS idx_risk_scores_month_level
     ON risk_scores (as_of_month, risk_level);
-CREATE INDEX IF NOT EXISTS idx_segments_month_name
-    ON segments (as_of_month, segment_name);
-CREATE INDEX IF NOT EXISTS idx_snapshots_month_priority_rank
-    ON customer_snapshots (as_of_month, crm_priority_rank);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_defense_rank
+    ON customer_snapshots (as_of_month, defense_rank);
 CREATE INDEX IF NOT EXISTS idx_snapshots_month_risk_level
     ON customer_snapshots (as_of_month, risk_level);
 CREATE INDEX IF NOT EXISTS idx_snapshots_month_segment_name
@@ -154,7 +152,7 @@ def connect_database(path: Path) -> sqlite3.Connection:
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """Create all service tables and indexes when they do not already exist."""
+    """Create all final service tables and indexes."""
     connection.executescript(SCHEMA_SQL)
 
 
