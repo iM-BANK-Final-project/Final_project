@@ -1,4 +1,4 @@
-"""Validate analytical artifacts and build RM service snapshot tables."""
+"""Validate final M12 artifacts and build RM service snapshot tables."""
 
 from __future__ import annotations
 
@@ -6,53 +6,16 @@ from dataclasses import dataclass
 import json
 import re
 
+import numpy as np
 import pandas as pd
 
-from src.segmentation.relationship_segments import SegmentationConfig
 
-
-MODEL_NAME = "LightGBM"
-GRADE_SCORES = {"일반": 0.0, "우수": 0.5, "최우수": 1.0}
-DEDICATED_SCORES = {"N": 0.0, "Y": 1.0}
-VALUE_NUMERIC_COLUMNS = (
-    "수신잔액합계",
-    "여신잔액합계",
-    "핵심거래활동금액",
-    "상품관계폭",
-)
-PRODUCT_RELATIONSHIP_COLUMNS = (
-    "요구불예금좌수",
-    "거치식예금좌수",
-    "적립식예금좌수",
-    "수익증권좌수",
-    "신탁좌수",
-    "퇴직연금좌수",
-    "여신_운전자금대출좌수",
-    "운전_할인어음좌수",
-    "운전_당좌대출좌수",
-    "운전_일반자금대출좌수",
-    "운전_무역금융좌수",
-    "운전_주택자금대출좌수",
-    "운전_기업구매자금대출좌수",
-    "운전_외상매출채권담보대출좌수",
-    "운전_기타운전자금대출좌수",
-    "여신_시설자금대출좌수",
-    "시설_일반자금대출좌수",
-    "시설_에너지절약시설대출좌수",
-    "시설_주택자금대출좌수",
-    "시설_기타시설자금대출좌수",
-    "신용카드개수",
-)
-VALUE_SCORE_COLUMNS = (
-    "수신점수",
-    "여신점수",
-    "거래성금액점수",
-    "상품관계폭점수",
-    "고객등급점수",
-    "전담점수",
-)
+MODEL_NAME = "LightGBM_Isotonic_Y_INTERVENE_M12_v2"
+VALID_GRADES = {"일반", "우수", "최우수"}
+VALID_DEDICATED = {"N", "Y"}
 SIGNAL_SOURCE_COLUMNS = {
     "입출금": ("요구불입금금액", "요구불출금금액"),
+    "자동이체": ("자동이체금액",),
     "채널": (
         "창구거래금액",
         "인터넷뱅킹거래금액",
@@ -62,8 +25,15 @@ SIGNAL_SOURCE_COLUMNS = {
     ),
     "카드": ("신용카드사용금액", "체크카드사용금액"),
 }
+SCORE_CHANGE_COLUMNS = {
+    "입출금": "요구불_최근3대이전9_변화율_pct",
+    "자동이체": "자동이체_최근3대이전9_변화율_pct",
+    "채널": "채널_최근3대이전9_변화율_pct",
+    "카드": "카드_최근3대이전9_변화율_pct",
+}
 RECOMMENDED_ACTIONS = {
     "입출금": "자금관리 상담, CMS, 결제성 거래 점검",
+    "자동이체": "자동이체 등록·해지 내역 점검, 결제성 거래 상담",
     "채널": "디지털채널 온보딩, 이용 장애·불편 확인",
     "카드": "법인카드 이용조건 점검, 한도·혜택 상담",
     "복합 거래활동": "RM 직접 접촉, 관계 회복 상담",
@@ -73,17 +43,44 @@ CONTACT_STRATEGIES = {
     "MEDIUM": "RM 계획 접촉",
     "WATCH": "모니터링 후 필요 시 접촉",
 }
+OPERATING_SCORE_COLUMNS = (
+    "법인ID",
+    "cutoff_month",
+    "score_eligible",
+    "SEG__baseline_segment_2023",
+    "SEG__current_segment",
+    "SEG__transition",
+    "CTX__업종_대분류__현재",
+    "CTX__업종_중분류__현재",
+    "risk_probability",
+    *SCORE_CHANGE_COLUMNS.values(),
+    "shap_top1_feature",
+    "shap_top1_value",
+    "shap_top2_feature",
+    "shap_top2_value",
+    "shap_top3_feature",
+    "shap_top3_value",
+)
+CLV_COLUMNS = (
+    "법인ID",
+    "기준월",
+    "risk_probability",
+    "CLV_NoRisk",
+    "CLV_Risk",
+    "PotentialLoss",
+    "defense_value",
+    "defense_rank",
+    "예측월수",
+)
 
 
 @dataclass
 class ServiceInputs:
-    """In-memory analytical artifacts consumed by the service builder."""
+    """In-memory final artifacts consumed by the service builder."""
 
     source: pd.DataFrame
-    risk_scores: pd.DataFrame
-    segment_panel: pd.DataFrame
-    profitability: pd.DataFrame
-    shap_local: pd.DataFrame
+    operating_scores: pd.DataFrame
+    clv: pd.DataFrame
 
 
 def _require_columns(
@@ -94,24 +91,6 @@ def _require_columns(
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise ValueError(f"{contract_name} 필수 컬럼이 없습니다: {missing}")
-
-
-def _normalize_month_value(value: object) -> str | None:
-    if pd.isna(value):
-        return None
-    if isinstance(value, pd.Period):
-        return str(value.asfreq("M"))
-    if isinstance(value, pd.Timestamp):
-        return str(value.to_period("M"))
-
-    text = str(value).strip()
-    if re.fullmatch(r"\d{6}", text):
-        text = f"{text[:4]}-{text[4:]}"
-    try:
-        parsed = pd.to_datetime(text, errors="raise")
-    except (TypeError, ValueError):
-        return None
-    return str(parsed.to_period("M"))
 
 
 def normalize_month(series: pd.Series) -> pd.Series:
@@ -128,51 +107,18 @@ def normalize_month(series: pd.Series) -> pd.Series:
     return normalized
 
 
-def _ensure_product_relationship_width(source: pd.DataFrame) -> pd.DataFrame:
-    """Use an explicit product-width column or derive it from product counts."""
-    if "상품관계폭" in source.columns:
-        return source
-
-    configured_amount_columns = [
-        column for column in SegmentationConfig().amount_cols if column in source.columns
-    ]
-    available_product_columns = [
-        column for column in PRODUCT_RELATIONSHIP_COLUMNS if column in source.columns
-    ]
-    if not available_product_columns and not configured_amount_columns:
-        raise ValueError("원천 데이터 필수 컬럼이 없습니다: ['상품관계폭']")
-
-    if available_product_columns:
-        product_counts = source.loc[:, available_product_columns].apply(
-            pd.to_numeric,
-            errors="coerce",
-        )
-        if not product_counts.isna().any().any():
-            if product_counts.lt(0).any().any():
-                raise ValueError("상품관계폭 파생 원천 컬럼에 음수가 있습니다.")
-            work = source.copy()
-            work["상품관계폭"] = product_counts.gt(0).sum(axis=1)
-            return work
-
-    relationship_amounts = source.loc[:, configured_amount_columns].apply(
-        pd.to_numeric,
-        errors="coerce",
+def _normalize_boolean(series: pd.Series, label: str) -> pd.Series:
+    if pd.api.types.is_bool_dtype(series):
+        return series.astype(bool)
+    normalized = series.astype("string").str.strip().str.lower().map(
+        {"true": True, "false": False, "1": True, "0": False}
     )
-    if relationship_amounts.isna().any().any():
-        invalid = relationship_amounts.columns[
-            relationship_amounts.isna().any()
-        ].tolist()
-        raise ValueError(f"상품관계폭 파생 원천 금액 컬럼에 결측이 있습니다: {invalid}")
-    if relationship_amounts.lt(0).any().any():
-        raise ValueError("상품관계폭 파생 원천 금액 컬럼에 음수가 있습니다.")
-
-    work = source.copy()
-    work["상품관계폭"] = relationship_amounts.gt(0).sum(axis=1)
-    return work
+    if normalized.isna().any():
+        raise ValueError(f"{label}은 true 또는 false여야 합니다.")
+    return normalized.astype(bool)
 
 
 def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
-    config = SegmentationConfig()
     source_columns = (
         "법인ID",
         "기준년월",
@@ -180,75 +126,44 @@ def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
         "사업장_시도",
         "법인_고객등급",
         "전담고객여부",
-        *config.amount_cols,
+        *sum(SIGNAL_SOURCE_COLUMNS.values(), ()),
     )
     _require_columns(inputs.source, source_columns, "원천 데이터")
-    _require_columns(
-        inputs.risk_scores,
-        ("법인ID", "기준년월", "모델", "예측확률"),
-        "위험점수",
-    )
-    _require_columns(
-        inputs.segment_panel,
-        (
-            "법인ID",
-            "기준년월",
-            "관계세그먼트",
-            "거래활동점수",
-            "수신관계점수",
-            "여신관계점수",
-        ),
-        "세그먼트",
-    )
-    _require_columns(
-        inputs.profitability,
-        ("법인ID", "기준월", "V_FTP_12M", "V_FTP_12M_방어가치"),
-        "수익성",
-    )
-    _require_columns(
-        inputs.shap_local,
-        (
-            "모델",
-            "법인ID",
-            "기준년월",
-            "feature",
-            "feature_value",
-            "shap_value",
-            "abs_shap_rank",
-        ),
-        "SHAP",
-    )
+    _require_columns(inputs.operating_scores, OPERATING_SCORE_COLUMNS, "운영 점수")
+    _require_columns(inputs.clv, CLV_COLUMNS, "CLV")
 
-    source = _ensure_product_relationship_width(inputs.source.copy())
-    risk = inputs.risk_scores.loc[inputs.risk_scores["모델"].eq(MODEL_NAME)].copy()
-    segment = inputs.segment_panel.copy()
-    profitability = inputs.profitability.copy()
-    shap = inputs.shap_local.loc[inputs.shap_local["모델"].eq(MODEL_NAME)].copy()
+    source = inputs.source.copy()
+    scores = inputs.operating_scores.copy()
+    clv = inputs.clv.copy()
+    for frame, label in ((source, "원천"), (scores, "운영 점수"), (clv, "CLV")):
+        if frame["법인ID"].isna().any():
+            raise ValueError(f"{label} 법인ID에 결측이 있습니다.")
+        frame["법인ID"] = frame["법인ID"].astype("string")
+
     source["기준년월"] = normalize_month(source["기준년월"])
     source["사업장_시도"] = source["사업장_시도"].fillna("미상")
-    risk["기준년월"] = normalize_month(risk["기준년월"])
-    segment["기준년월"] = normalize_month(segment["기준년월"])
-    profitability["기준월"] = normalize_month(profitability["기준월"])
-    shap["기준년월"] = normalize_month(shap["기준년월"])
-    return ServiceInputs(source, risk, segment, profitability, shap)
+    scores["cutoff_month"] = normalize_month(scores["cutoff_month"])
+    scores["score_eligible"] = _normalize_boolean(
+        scores["score_eligible"], "score_eligible"
+    )
+    clv["기준월"] = normalize_month(clv["기준월"])
+    return ServiceInputs(source, scores, clv)
 
 
 def _common_months(inputs: ServiceInputs) -> list[str]:
-    month_sets = (
-        set(inputs.source["기준년월"]),
-        set(inputs.risk_scores["기준년월"]),
-        set(inputs.segment_panel["기준년월"]),
-        set(inputs.profitability["기준월"]),
+    return sorted(
+        set(inputs.source["기준년월"])
+        & set(inputs.operating_scores["cutoff_month"])
+        & set(inputs.clv["기준월"])
     )
-    return sorted(set.intersection(*month_sets))
 
 
 def select_common_month(inputs: ServiceInputs, requested: str | None) -> str:
-    """Select the latest common artifact month, or validate an explicit month."""
+    """Select the final common artifact month, or validate an explicit month."""
     normalized = _normalized_inputs(inputs)
     available = _common_months(normalized)
     if not available:
-        raise ValueError("위험·세그먼트·원천·수익성 데이터에 공통 기준월이 없습니다.")
+        raise ValueError("운영 점수·원천·CLV 데이터에 공통 기준월이 없습니다.")
     if requested is None:
         return available[-1]
     requested_month = normalize_month(pd.Series([requested])).iloc[0]
@@ -258,60 +173,6 @@ def select_common_month(inputs: ServiceInputs, requested: str | None) -> str:
             f"사용 가능 공통 기준월: {available}"
         )
     return requested_month
-
-
-def _validate_value_categories(frame: pd.DataFrame) -> None:
-    unknown_grades = sorted(set(frame["법인_고객등급"].dropna()) - GRADE_SCORES.keys())
-    if frame["법인_고객등급"].isna().any() or unknown_grades:
-        raise ValueError(f"고객등급 허용값 위반: {unknown_grades}")
-    unknown_flags = sorted(set(frame["전담고객여부"].dropna()) - DEDICATED_SCORES.keys())
-    if frame["전담고객여부"].isna().any() or unknown_flags:
-        raise ValueError(f"전담고객여부 허용값 위반: {unknown_flags}")
-
-
-def build_customer_value(source_month: pd.DataFrame) -> pd.DataFrame:
-    """Build the approved six-component equal-weight customer-value proxy."""
-    required = (
-        "법인ID",
-        *VALUE_NUMERIC_COLUMNS,
-        "법인_고객등급",
-        "전담고객여부",
-    )
-    missing = [column for column in required if column not in source_month.columns]
-    if missing:
-        raise ValueError(f"고객가치 필수 구성요소가 없습니다: {missing}")
-
-    work = source_month.copy()
-    numeric = work.loc[:, VALUE_NUMERIC_COLUMNS].apply(pd.to_numeric, errors="coerce")
-    if numeric.isna().any().any():
-        columns = numeric.columns[numeric.isna().any()].tolist()
-        raise ValueError(f"고객가치 원천 금액 또는 상품관계폭에 결측이 있습니다: {columns}")
-    if numeric.lt(0).any().any():
-        raise ValueError("고객가치 원천 금액 또는 상품관계폭에 음수가 있습니다.")
-    work.loc[:, VALUE_NUMERIC_COLUMNS] = numeric
-
-    _validate_value_categories(work)
-
-    for source_column, score_column in zip(
-        VALUE_NUMERIC_COLUMNS,
-        VALUE_SCORE_COLUMNS[:4],
-    ):
-        work[score_column] = work[source_column].rank(method="average", pct=True)
-    work["고객등급점수"] = work["법인_고객등급"].map(GRADE_SCORES)
-    work["전담점수"] = work["전담고객여부"].map(DEDICATED_SCORES)
-    if work.loc[:, VALUE_SCORE_COLUMNS].isna().any().any():
-        raise ValueError("고객가치 여섯 구성요소에 결측이 있습니다.")
-
-    work["customer_value_proxy"] = work.loc[:, VALUE_SCORE_COLUMNS].mean(axis=1)
-    work["value_components_json"] = work.loc[:, VALUE_SCORE_COLUMNS].apply(
-        lambda row: json.dumps(
-            {column: float(row[column]) for column in VALUE_SCORE_COLUMNS},
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-        axis=1,
-    )
-    return work
 
 
 def _validate_unique(frame: pd.DataFrame, month_column: str, contract: str) -> None:
@@ -324,17 +185,15 @@ def _numeric_contract(
     columns: tuple[str, ...],
     contract: str,
     *,
-    non_negative: bool = False,
     probability: bool = False,
 ) -> pd.DataFrame:
     numeric = frame.loc[:, columns].apply(pd.to_numeric, errors="coerce")
     if numeric.isna().any().any():
         invalid = numeric.columns[numeric.isna().any()].tolist()
         raise ValueError(f"{contract} 숫자 또는 결측 계약 위반: {invalid}")
-    if non_negative and numeric.lt(0).any().any():
-        raise ValueError(f"{contract} 원천 금액에 음수가 있습니다.")
-    within_probability_range = numeric.ge(0).all().all() and numeric.le(1).all().all()
-    if probability and not within_probability_range:
+    if probability and not (
+        numeric.ge(0).all().all() and numeric.le(1).all().all()
+    ):
         raise ValueError(f"{contract} 예측확률은 0과 1 사이여야 합니다.")
     result = frame.copy()
     result.loc[:, columns] = numeric
@@ -358,12 +217,12 @@ def build_weakening_signals(
     customer_ids: set[str],
     as_of_month: str,
 ) -> pd.DataFrame:
-    """Compare recent three-month activity with the preceding six months."""
+    """Compare recent three-month activity with the preceding nine months."""
     required = ("법인ID", "기준년월", *sum(SIGNAL_SOURCE_COLUMNS.values(), ()))
     _require_columns(history, required, "약화 신호 원천 데이터")
     month = normalize_month(pd.Series([as_of_month])).iloc[0]
     expected_months = pd.period_range(
-        pd.Period(month, freq="M") - 8,
+        pd.Period(month, freq="M") - 11,
         pd.Period(month, freq="M"),
         freq="M",
     ).astype(str)
@@ -374,13 +233,12 @@ def build_weakening_signals(
     work = work.loc[work["기준년월"].isin(expected_months)].copy()
     if work.duplicated(["법인ID", "기준년월"], keep=False).any():
         raise ValueError("약화 신호 원천 데이터에 법인ID+기준년월 중복이 있습니다.")
-
     expected_index = pd.MultiIndex.from_product(
         [sorted(customer_ids), expected_months], names=["법인ID", "기준년월"]
     )
     actual_index = pd.MultiIndex.from_frame(work[["법인ID", "기준년월"]])
     if not expected_index.isin(actual_index).all():
-        raise ValueError("약화 신호 계산에는 고객별 연속 9개월 이력이 필요합니다.")
+        raise ValueError("약화 신호 계산에는 고객별 연속 12개월 이력이 필요합니다.")
 
     source_columns = sum(SIGNAL_SOURCE_COLUMNS.values(), ())
     numeric = work.loc[:, source_columns].apply(pd.to_numeric, errors="coerce")
@@ -396,8 +254,8 @@ def build_weakening_signals(
         customer = customer.sort_values("기준년월")
         for signal_type, columns in SIGNAL_SOURCE_COLUMNS.items():
             monthly = customer.loc[:, columns].sum(axis=1)
-            previous = float(monthly.iloc[:6].mean())
-            recent = float(monthly.iloc[6:].mean())
+            previous = float(monthly.iloc[:9].mean())
+            recent = float(monthly.iloc[9:].mean())
             change_rate = None if previous == 0 else (recent / previous - 1) * 100
             rows.append(
                 {
@@ -409,7 +267,6 @@ def build_weakening_signals(
                     "change_rate": None if change_rate is None else round(change_rate, 2),
                 }
             )
-
     signals = pd.DataFrame(rows)
     signals["signal_rank"] = signals.groupby("corporate_id")["change_rate"].rank(
         method="min", ascending=True, na_option="bottom"
@@ -472,7 +329,7 @@ def build_recommendations(
     )
     recommendations["reason"] = recommendations.apply(
         lambda row: (
-            f"{row['weakening_type']} 신호와 지속거래약화 가능성 "
+            f"{row['weakening_type']} 신호와 향후 6개월 지속거래약화 가능성 "
             f"{row['risk_probability']:.1%}를 고려한 조기관리 대상"
         ),
         axis=1,
@@ -486,9 +343,7 @@ def build_recommendations(
     )
     unclassified = recommendations["weakening_type"].eq("미분류")
     recommendations.loc[unclassified, "contact_strategy"] = "RM 확인"
-    recommendations.loc[unclassified, "recommended_action"] = (
-        "거래이력 확인 후 RM 판단"
-    )
+    recommendations.loc[unclassified, "recommended_action"] = "거래이력 확인 후 RM 판단"
     recommendations.loc[unclassified, "reason"] = (
         "비교 분모를 산출할 수 없어 약화 원인을 판단하지 않았습니다."
     )
@@ -515,15 +370,54 @@ def build_recommendations(
     ]
 
 
+def _apply_score_changes(
+    signals: pd.DataFrame,
+    scores: pd.DataFrame,
+) -> pd.DataFrame:
+    lookup: dict[tuple[str, str], float] = {}
+    for row in scores.itertuples(index=False):
+        customer_id = str(getattr(row, "법인ID"))
+        row_values = scores.loc[scores["법인ID"].eq(customer_id)].iloc[0]
+        for signal_type, column in SCORE_CHANGE_COLUMNS.items():
+            lookup[(customer_id, signal_type)] = float(row_values[column])
+    result = signals.copy()
+    result["change_rate"] = [
+        lookup[(row.corporate_id, row.signal_type)]
+        for row in result.itertuples(index=False)
+    ]
+    result["signal_rank"] = result.groupby("corporate_id")["change_rate"].rank(
+        method="min", ascending=True, na_option="bottom"
+    ).astype(int)
+    return result
+
+
+def _build_shap_table(scores: pd.DataFrame, month: str) -> pd.DataFrame:
+    rows = []
+    for score in scores.itertuples(index=False):
+        for rank in range(1, 4):
+            rows.append(
+                {
+                    "corporate_id": str(getattr(score, "법인ID")),
+                    "as_of_month": month,
+                    "model_name": MODEL_NAME,
+                    "feature_name": getattr(score, f"shap_top{rank}_feature"),
+                    "feature_value": np.nan,
+                    "shap_value": float(getattr(score, f"shap_top{rank}_value")),
+                    "abs_shap_rank": rank,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def build_service_tables(
     inputs: ServiceInputs,
     as_of_month: str | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Validate and join artifacts into database-shaped service tables."""
+    """Validate and join final artifacts into database-shaped service tables."""
     normalized = _normalized_inputs(inputs)
     available = _common_months(normalized)
     if not available:
-        raise ValueError("위험·세그먼트·원천·수익성 데이터에 공통 기준월이 없습니다.")
+        raise ValueError("운영 점수·원천·CLV 데이터에 공통 기준월이 없습니다.")
     if as_of_month is None:
         month = available[-1]
     else:
@@ -535,192 +429,173 @@ def build_service_tables(
             )
 
     source = normalized.source
-    risk = normalized.risk_scores
-    segment = normalized.segment_panel
-    profitability = normalized.profitability
-    shap = normalized.shap_local
+    scores = normalized.operating_scores
+    clv = normalized.clv
     _validate_unique(source, "기준년월", "원천 데이터")
-    _validate_unique(risk, "기준년월", "위험점수")
-    _validate_unique(segment, "기준년월", "세그먼트")
-    _validate_unique(profitability, "기준월", "수익성")
-
-    config = SegmentationConfig()
-    source = _numeric_contract(
-        source,
-        ("상품관계폭", *config.amount_cols),
-        "원천 데이터",
-        non_negative=True,
-    )
-    _validate_value_categories(source)
-    risk = _numeric_contract(risk, ("예측확률",), "위험점수", probability=True)
-    segment = _numeric_contract(
-        segment,
-        ("거래활동점수", "수신관계점수", "여신관계점수"),
-        "세그먼트 점수",
-        probability=True,
+    _validate_unique(scores, "cutoff_month", "운영 점수")
+    _validate_unique(clv, "기준월", "CLV")
+    scores = _numeric_contract(scores, ("risk_probability",), "운영 점수", probability=True)
+    scores = _numeric_contract(scores, tuple(SCORE_CHANGE_COLUMNS.values()), "약화 변화율")
+    clv = _numeric_contract(
+        clv,
+        (
+            "risk_probability",
+            "CLV_NoRisk",
+            "CLV_Risk",
+            "PotentialLoss",
+            "defense_value",
+            "예측월수",
+        ),
+        "CLV",
     )
 
+    scores_month = scores.loc[
+        scores["cutoff_month"].eq(month) & scores["score_eligible"]
+    ].copy()
+    clv_month = clv.loc[clv["기준월"].eq(month)].copy()
     source_month = source.loc[source["기준년월"].eq(month)].copy()
-    source_month["수신잔액합계"] = source_month.loc[:, config.deposit_cols].sum(axis=1)
-    source_month["여신잔액합계"] = source_month.loc[:, config.loan_cols].sum(axis=1)
-    source_month["핵심거래활동금액"] = source_month.loc[:, config.activity_cols].sum(axis=1)
-    value = build_customer_value(source_month)
-
-    risk_month = risk.loc[risk["기준년월"].eq(month)].copy()
-    segment_month = segment.loc[segment["기준년월"].eq(month)].copy()
-    profitability_month = profitability.loc[profitability["기준월"].eq(month)].copy()
-    joined = risk_month.merge(
-        segment_month,
-        on=["법인ID", "기준년월"],
-        how="left",
-        validate="one_to_one",
-    ).merge(
-        value,
-        on=["법인ID", "기준년월"],
-        how="left",
-        validate="one_to_one",
-    ).merge(
-        profitability_month,
-        left_on=["법인ID", "기준년월"],
-        right_on=["법인ID", "기준월"],
-        how="left",
-        validate="one_to_one",
+    joined = (
+        scores_month.merge(
+            clv_month,
+            on="법인ID",
+            how="left",
+            validate="one_to_one",
+            suffixes=("", "_clv"),
+        )
+        .merge(
+            source_month[
+                [
+                    "법인ID",
+                    "업종_대분류",
+                    "사업장_시도",
+                    "법인_고객등급",
+                    "전담고객여부",
+                ]
+            ],
+            on="법인ID",
+            how="left",
+            validate="one_to_one",
+        )
     )
-    required_joined = (
-        "관계세그먼트",
-        "customer_value_proxy",
-        "value_components_json",
-    )
-    if joined.loc[:, required_joined].isna().any().any():
-        raise ValueError("위험점수 모집단의 세그먼트 또는 고객가치 결합 계약 위반입니다.")
-
+    required_joined = [
+        "CLV_NoRisk",
+        "CLV_Risk",
+        "PotentialLoss",
+        "defense_value",
+        "SEG__current_segment",
+        "법인_고객등급",
+        "전담고객여부",
+    ]
+    if joined[required_joined].isna().any().any():
+        raise ValueError("적격 운영 점수의 CLV·세그먼트·고객속성 결합 계약 위반입니다.")
+    if not np.allclose(
+        joined["risk_probability"].to_numpy(float),
+        joined["risk_probability_clv"].to_numpy(float),
+        rtol=0,
+        atol=1e-12,
+    ):
+        raise ValueError("운영 점수와 CLV의 위험확률 불일치가 있습니다.")
+    if not joined["예측월수"].eq(6).all():
+        raise ValueError("CLV 예측월수는 정확히 6개월이어야 합니다.")
+    if not joined["법인_고객등급"].isin(VALID_GRADES).all():
+        raise ValueError("고객등급 허용값 위반이 있습니다.")
+    if not joined["전담고객여부"].isin(VALID_DEDICATED).all():
+        raise ValueError("전담고객여부 허용값 위반이 있습니다.")
     joined["dedicated_yn"] = joined["전담고객여부"].map({"N": 0, "Y": 1})
-    joined["risk_level"] = _risk_level(joined["예측확률"])
-    joined["crm_priority_score"] = (
-        joined["예측확률"] * joined["customer_value_proxy"]
-    )
-    joined["crm_priority_rank"] = joined["crm_priority_score"].rank(
-        method="min", ascending=False
-    ).astype(int)
+    joined["risk_level"] = _risk_level(joined["risk_probability"])
 
-    customers = joined.loc[
-        :,
+    customers = joined[
         [
             "법인ID",
-            "업종_대분류",
+            "CTX__업종_대분류__현재",
             "사업장_시도",
             "법인_고객등급",
             "dedicated_yn",
-        ],
+        ]
     ].rename(
         columns={
             "법인ID": "corporate_id",
-            "업종_대분류": "industry",
+            "CTX__업종_대분류__현재": "industry",
             "사업장_시도": "region",
             "법인_고객등급": "customer_grade",
         }
     )
     customers.insert(1, "corporate_name", customers["corporate_id"])
 
-    risk_table = joined.loc[:, ["법인ID", "기준년월", "모델", "예측확률", "risk_level"]].rename(
-        columns={
-            "법인ID": "corporate_id",
-            "기준년월": "as_of_month",
-            "모델": "model_name",
-            "예측확률": "risk_probability",
-        }
+    risk_table = joined[["법인ID", "risk_probability", "risk_level"]].rename(
+        columns={"법인ID": "corporate_id"}
     )
-    segments = joined.loc[
-        :,
-        [
-            "법인ID",
-            "기준년월",
-            "관계세그먼트",
-            "거래활동점수",
-            "수신관계점수",
-            "여신관계점수",
-        ],
-    ].rename(
-        columns={
-            "법인ID": "corporate_id",
-            "기준년월": "as_of_month",
-            "관계세그먼트": "segment_name",
-            "거래활동점수": "activity_score",
-            "수신관계점수": "deposit_score",
-            "여신관계점수": "loan_score",
-        }
-    )
-    profitability_table = joined.loc[
-        :,
-        [
-            "법인ID",
-            "기준년월",
-            "V_FTP_12M",
-            "V_FTP_12M_방어가치",
-            "customer_value_proxy",
-            "value_components_json",
-        ],
-    ].rename(
-        columns={
-            "법인ID": "corporate_id",
-            "기준년월": "as_of_month",
-            "V_FTP_12M": "profitability_value",
-            "V_FTP_12M_방어가치": "defense_value",
-        }
-    )
+    risk_table.insert(1, "as_of_month", month)
+    risk_table.insert(2, "model_name", MODEL_NAME)
 
-    risk_ids = set(risk_month["법인ID"])
-    shap_table = shap.loc[
-        shap["기준년월"].eq(month) & shap["법인ID"].isin(risk_ids),
+    segments = joined[
         [
             "법인ID",
-            "기준년월",
-            "모델",
-            "feature",
-            "feature_value",
-            "shap_value",
-            "abs_shap_rank",
-        ],
+            "SEG__baseline_segment_2023",
+            "SEG__current_segment",
+            "SEG__transition",
+        ]
     ].rename(
         columns={
             "법인ID": "corporate_id",
-            "기준년월": "as_of_month",
-            "모델": "model_name",
-            "feature": "feature_name",
+            "SEG__baseline_segment_2023": "baseline_segment_name",
+            "SEG__current_segment": "segment_name",
+            "SEG__transition": "segment_transition",
         }
     )
-    shap_table = shap_table.dropna(subset=["feature_value"])
+    segments.insert(1, "as_of_month", month)
 
-    snapshots = joined.loc[
-        :,
+    clv_values = joined[
         [
             "법인ID",
-            "기준년월",
-            "예측확률",
+            "CLV_NoRisk",
+            "CLV_Risk",
+            "PotentialLoss",
+            "defense_value",
+            "defense_rank",
+        ]
+    ].rename(
+        columns={
+            "법인ID": "corporate_id",
+            "CLV_NoRisk": "clv_no_risk",
+            "CLV_Risk": "clv_risk",
+            "PotentialLoss": "potential_loss",
+        }
+    )
+    clv_values.insert(1, "as_of_month", month)
+
+    risk_ids = set(scores_month["법인ID"].astype(str))
+    weakening_signals = build_weakening_signals(source, risk_ids, month)
+    weakening_signals = _apply_score_changes(weakening_signals, scores_month)
+    shap_table = _build_shap_table(scores_month, month)
+
+    snapshots = joined[
+        [
+            "법인ID",
+            "risk_probability",
             "risk_level",
-            "customer_value_proxy",
-            "V_FTP_12M",
-            "V_FTP_12M_방어가치",
-            "crm_priority_score",
-            "crm_priority_rank",
-            "관계세그먼트",
-            "업종_대분류",
+            "CLV_NoRisk",
+            "CLV_Risk",
+            "PotentialLoss",
+            "defense_value",
+            "defense_rank",
+            "SEG__current_segment",
+            "CTX__업종_대분류__현재",
             "사업장_시도",
             "dedicated_yn",
-        ],
+        ]
     ].rename(
         columns={
             "법인ID": "corporate_id",
-            "기준년월": "as_of_month",
-            "예측확률": "risk_probability",
-            "V_FTP_12M": "profitability_value",
-            "V_FTP_12M_방어가치": "defense_value",
-            "관계세그먼트": "segment_name",
-            "업종_대분류": "industry",
+            "CLV_NoRisk": "clv_no_risk",
+            "CLV_Risk": "clv_risk",
+            "PotentialLoss": "potential_loss",
+            "SEG__current_segment": "segment_name",
+            "CTX__업종_대분류__현재": "industry",
             "사업장_시도": "region",
         }
     )
-    weakening_signals = build_weakening_signals(source, risk_ids, month)
+    snapshots.insert(1, "as_of_month", month)
     weakening_types = classify_weakening_type(weakening_signals)
     snapshots = snapshots.merge(
         weakening_types,
@@ -729,10 +604,11 @@ def build_service_tables(
         validate="one_to_one",
     )
     if snapshots["weakening_type"].isna().any():
-        raise ValueError("위험점수 모집단의 약화 신호 분류가 없습니다.")
+        raise ValueError("적격 운영 모집단의 약화 신호 분류가 없습니다.")
     weakening_type = snapshots.pop("weakening_type")
     snapshots.insert(10, "weakening_type", weakening_type)
     recommendations = build_recommendations(snapshots, weakening_signals)
+
     signal_distribution = snapshots["weakening_type"].value_counts().sort_index()
     monthly_summaries = pd.DataFrame(
         [
@@ -741,7 +617,7 @@ def build_service_tables(
                 "managed_customer_count": int(len(snapshots)),
                 "average_risk": float(snapshots["risk_probability"].mean()),
                 "high_risk_share": float(snapshots["risk_level"].eq("HIGH").mean()),
-                "priority_value_total": float(snapshots["crm_priority_score"].sum()),
+                "potential_loss_total": float(snapshots["defense_value"].sum()),
                 "signal_distribution_json": json.dumps(
                     {
                         str(label): int(value)
@@ -757,7 +633,7 @@ def build_service_tables(
         "customers": customers.reset_index(drop=True),
         "risk_scores": risk_table.reset_index(drop=True),
         "segments": segments.reset_index(drop=True),
-        "profitability": profitability_table.reset_index(drop=True),
+        "clv_values": clv_values.reset_index(drop=True),
         "weakening_signals": weakening_signals.reset_index(drop=True),
         "shap_factors": shap_table.reset_index(drop=True),
         "recommendations": recommendations.reset_index(drop=True),

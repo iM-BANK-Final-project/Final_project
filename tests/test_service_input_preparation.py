@@ -4,82 +4,143 @@ import pandas as pd
 import pytest
 
 from src.backend.prepare_service_database import (
-    build_profitability_panel,
-    build_service_segment_panel,
+    DEFAULT_BANK_RATES_PATH,
+    DEFAULT_FTP_PATH,
+    DEFAULT_RISK_SCORES_PATH,
+    build_final_clv,
+    filter_eligible_operating_scores,
+    validate_source_panel,
 )
-from src.segmentation.relationship_segments import SegmentationConfig
 
 
-def _segmentation_source() -> pd.DataFrame:
-    config = SegmentationConfig()
-    rows = []
-    for customer_id, scale in (("A", 1.0), ("B", 2.0), ("C", 3.0)):
-        for month in pd.period_range("2023-01", "2025-12", freq="M"):
-            row = {
-                "법인ID": customer_id,
-                "기준년월": int(month.strftime("%Y%m")),
-            }
-            row.update({column: scale for column in config.amount_cols})
-            rows.append(row)
-    return pd.DataFrame(rows)
-
-
-def _bank_rates_2023() -> pd.DataFrame:
-    months = [f"2023년{month:02d}월" for month in range(1, 13)]
-    return pd.DataFrame(
-        [
-            {"은행": "iM뱅크(구 대구은행)", "구분": "기업대출금리", **dict.fromkeys(months, 5.0)},
-            {"은행": None, "구분": "저축성수신금리", **dict.fromkeys(months, 2.0)},
-        ]
-    )
-
-
-def _profitability_source() -> pd.DataFrame:
+def _minimal_panel() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "법인ID": ["A"] * 12,
-            "기준년월": [int(month.strftime("%Y%m")) for month in pd.period_range("2023-01", "2023-12", freq="M")],
-            "요구불예금잔액": [20.0] * 12,
-            "거치식예금잔액": [30.0] * 12,
-            "적립식예금잔액": [20.0] * 12,
-            "여신_운전자금대출잔액": [70.0] * 12,
-            "여신_시설자금대출잔액": [30.0] * 12,
+            "법인ID": ["A"] * 36,
+            "기준년월": [
+                int(month.strftime("%Y%m"))
+                for month in pd.period_range("2023-01", "2025-12", freq="M")
+            ],
         }
     )
 
 
-def test_build_service_segment_panel_derives_required_loader_columns():
-    result = build_service_segment_panel(_segmentation_source())
-
-    assert list(result.columns) == [
-        "법인ID",
-        "기준년월",
-        "관계세그먼트",
-        "거래활동점수",
-        "수신관계점수",
-        "여신관계점수",
-    ]
-    assert result["기준년월"].min() == "2023-12"
-    assert result["기준년월"].max() == "2025-12"
-    assert len(result) == 3 * 25
+def _source_with_balances() -> pd.DataFrame:
+    panel = _minimal_panel()
+    panel["여신_운전자금대출잔액"] = 100.0
+    panel["여신_시설자금대출잔액"] = 0.0
+    panel["거치식예금잔액"] = 0.0
+    panel["적립식예금잔액"] = 0.0
+    panel["요구불예금잔액"] = 0.0
+    return panel
 
 
-def test_build_profitability_panel_matches_notebook_ftp_contract():
-    result = build_profitability_panel(_profitability_source(), _bank_rates_2023())
-
-    assert list(result.columns) == [
-        "법인ID",
-        "기준월",
-        "V_FTP_12M",
-        "V_FTP_12M_방어가치",
-    ]
-    assert result["기준월"].tolist() == ["2023-12"]
-    assert result.loc[0, "V_FTP_12M"] == pytest.approx(3.182)
-    assert result.loc[0, "V_FTP_12M_방어가치"] == pytest.approx(3.182)
+def _ftp() -> pd.DataFrame:
+    months = pd.period_range("2023-01", "2025-12", freq="M")
+    return pd.DataFrame(
+        {
+            "month": months.astype(str),
+            "monthly_recombined_ytd_rate_decimal": [0.002] * 36,
+        }
+    )
 
 
-def test_build_profitability_panel_rejects_missing_monthly_rates():
-    incomplete_rates = _bank_rates_2023().drop(columns="2023년12월")
+def _bank_rates() -> pd.DataFrame:
+    month_columns = {
+        month.strftime("%Y년%m월"): [4.0, 1.0]
+        for month in pd.date_range("2023-01-01", "2025-12-01", freq="MS")
+    }
+    return pd.DataFrame(
+        {
+            "은행": ["iM뱅크(구 대구은행)", None],
+            "구분": ["기업대출금리", "저축성수신금리"],
+            **month_columns,
+        }
+    )
 
-    with pytest.raises(ValueError, match="금리 매핑 누락"):
-        build_profitability_panel(_profitability_source(), incomplete_rates)
+
+def test_default_paths_point_to_final_repository_artifacts():
+    assert DEFAULT_RISK_SCORES_PATH == Path(
+        "src/models/web_m12_intervene_v2_scores_202512_all_3372.csv"
+    )
+    assert DEFAULT_FTP_PATH == Path("outputs/iM뱅크_월별_추정FTP_2023_2025.csv")
+    assert DEFAULT_BANK_RATES_PATH == Path("outputs/예대금리차2023~2025_순.csv")
+
+
+def test_validate_source_panel_requires_complete_consecutive_36_months():
+    validate_source_panel(_minimal_panel(), expected_firms=1)
+
+    incomplete = _minimal_panel().iloc[:-1]
+    with pytest.raises(ValueError, match="36개월"):
+        validate_source_panel(incomplete, expected_firms=1)
+
+
+def test_filter_eligible_operating_scores_enforces_count_and_unique_ids():
+    scores = pd.DataFrame(
+        {
+            "법인ID": ["A", "B", "C"],
+            "cutoff_month": [202512] * 3,
+            "score_eligible": [True, False, True],
+            "risk_probability": [0.8, 0.7, 0.6],
+        }
+    )
+
+    result = filter_eligible_operating_scores(scores, expected_count=2)
+
+    assert result["법인ID"].tolist() == ["A", "C"]
+    with pytest.raises(ValueError, match="적격 운영 모집단"):
+        filter_eligible_operating_scores(scores, expected_count=3)
+
+    duplicated = pd.concat([scores, scores.iloc[[0]]], ignore_index=True)
+    with pytest.raises(ValueError, match="중복"):
+        filter_eligible_operating_scores(duplicated, expected_count=2)
+
+
+def test_build_final_clv_reproduces_cutoff_spread_and_six_month_formula():
+    scores = pd.DataFrame(
+        {
+            "법인ID": ["A"],
+            "cutoff_month": [202512],
+            "score_eligible": [True],
+            "risk_probability": [0.0],
+        }
+    )
+
+    result = build_final_clv(
+        _source_with_balances(),
+        _ftp(),
+        _bank_rates(),
+        scores,
+        expected_count=1,
+    )
+
+    assert result.loc[0, "기준월"] == "2025-12"
+    assert result.loc[0, "예측월수"] == 6
+    assert result.loc[0, "CLV_NoRisk"] == pytest.approx(100.0 * 0.038 * 6)
+    assert result.loc[0, "CLV_Risk"] == pytest.approx(result.loc[0, "CLV_NoRisk"])
+    assert result.loc[0, "PotentialLoss"] == pytest.approx(0)
+
+
+def test_build_final_clv_keeps_source_and_eligible_population_locks_separate():
+    source_a = _source_with_balances()
+    source_b = source_a.assign(법인ID="B")
+    source = pd.concat([source_a, source_b], ignore_index=True)
+    scores = pd.DataFrame(
+        {
+            "법인ID": ["A", "B"],
+            "cutoff_month": [202512, 202512],
+            "score_eligible": [True, False],
+            "risk_probability": [0.0, 0.5],
+        }
+    )
+
+    result = build_final_clv(
+        source,
+        _ftp(),
+        _bank_rates(),
+        scores,
+        expected_source_firms=2,
+        expected_count=1,
+    )
+
+    assert result["법인ID"].tolist() == ["A"]
