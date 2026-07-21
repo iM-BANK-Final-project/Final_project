@@ -266,6 +266,23 @@ def test_generate_strategy_report_ignores_explicitly_negated_direction_claims(dr
     assert result.weakeningDrivers == drivers
 
 
+@pytest.mark.parametrize(
+    "drivers",
+    [
+        "여신관계_수준은 위험을 높이지 않습니다.",
+        "핵심거래_수준은 위험을 낮추지 않습니다.",
+        "관계영역_활성폭은 위험을 증가하지 않습니다.",
+    ],
+)
+def test_generate_strategy_report_ignores_directly_negated_direction_verbs(drivers):
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = drivers
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.weakeningDrivers == drivers
+
+
 def test_generate_strategy_report_checks_every_repeated_feature_occurrence():
     payload = valid_narrative()
     payload["weakeningDrivers"] = (
@@ -359,6 +376,8 @@ def test_generate_strategy_report_allows_top10_internal_absolute_shap_share(driv
         "SHAP 0.31로 위험확률은 0.62입니다.",
         "Top 10 절대 SHAP 합의 31%를 차지하며 SHAP 때문에 위험확률이 31%p 변했습니다.",
         "top10AbsShare는 31%지만 위험확률을 10%p 높였습니다.",
+        "Top 10 SHAP이 위험확률의 31%를 차지합니다.",
+        "Top 10 절대 SHAP 합의 31%를 차지하며 위험확률이 31%p 변했습니다.",
     ],
 )
 def test_generate_strategy_report_rejects_shap_linked_probability_changes(drivers):
@@ -379,6 +398,10 @@ def test_generate_strategy_report_rejects_shap_linked_probability_changes(driver
         "해지 확률을 의미하는 것은 아닙니다.",
         "부도 확률 모델을 사용하지 않습니다.",
         "휴면 확률은 결코 아닙니다.",
+        "해지 확률을 나타내지 않습니다.",
+        "부도 확률을 가리키지 않습니다.",
+        "휴면 확률을 뜻하지 않습니다.",
+        "해지 확률을 보여주지 않습니다.",
     ],
 )
 @pytest.mark.parametrize(

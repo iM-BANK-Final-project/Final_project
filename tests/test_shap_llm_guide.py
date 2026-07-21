@@ -45,3 +45,6 @@ def test_shap_llm_guide_states_operational_limits_and_raw_top10_contract():
     assert "무관한 downstream 부정은 정규화를 막지 않는다" in text
     assert "허용된 Top 10 비중 span만 marker로 치환" in text
     assert "나머지 clause의 위험·확률 수치 결합 검사를 계속" in text
+    assert "명시적 내부 분모" in text
+    assert "일반적인 `Top 10 SHAP` 문구는 허용 span이 아니다" in text
+    assert "변하다·변동하다·바뀌다·차지하다" in text
