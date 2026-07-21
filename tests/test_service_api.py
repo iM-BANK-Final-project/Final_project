@@ -5,7 +5,10 @@ from fastapi.testclient import TestClient
 
 from src.backend.app import create_app
 from src.backend.database import connect_database, initialize_schema
+from src.backend.gemini_service import ReportGenerationError
+from src.backend.report_pdf import PdfGenerationError
 from src.backend.repository import ServiceRepository
+from src.backend.schemas import GeminiNarrative
 
 
 @pytest.fixture
@@ -73,6 +76,39 @@ def client(service_database):
     repository = ServiceRepository(lambda: connect_database(service_database))
     with TestClient(create_app(repository)) as test_client:
         yield test_client
+
+
+def generated_narrative() -> GeminiNarrative:
+    return GeminiNarrative.model_validate(
+        {
+            "riskSummary": "조기 점검이 필요합니다.",
+            "valueAssessment": "확정 손실이 아닌 시나리오입니다.",
+            "weakeningDrivers": "SHAP 예측 기여도를 확인합니다.",
+            "contactStrategy": "RM 확인이 필요합니다.",
+            "recommendedActions": ["접촉 일정 수립"],
+            "caveats": ["해지 확률이 아닙니다."],
+        }
+    )
+
+
+@pytest.fixture
+def ai_client(service_database):
+    repository = ServiceRepository(lambda: connect_database(service_database))
+    contexts = []
+    rendered_reports = []
+
+    def generate(context):
+        contexts.append(context)
+        return generated_narrative()
+
+    def render(report):
+        rendered_reports.append(report)
+        return b"%PDF-1.4\nmock-report"
+
+    with TestClient(
+        create_app(repository, report_generator=generate, pdf_renderer=render)
+    ) as test_client:
+        yield test_client, contexts, rendered_reports
 
 
 def test_health_reports_available_database(client):
@@ -237,6 +273,134 @@ def test_report_returns_nullable_feature_values_and_all_stored_models(client):
             "rank": 1,
         }
     ]
+
+
+def test_generate_report_combines_authoritative_metrics_and_top10(ai_client):
+    client, contexts, _rendered_reports = ai_client
+
+    response = client.post(
+        "/api/reports/A/generate", params={"as_of_month": "2025-12"}
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["corporateId"] == "A"
+    assert payload["customerName"] == "에이기업"
+    assert payload["asOfMonth"] == "2025-12"
+    assert payload["metrics"] == {
+        "risk": 80.0,
+        "clvRisk": 70.0,
+        "potentialLoss": 30.0,
+    }
+    assert len(payload["shapFactors"]) == 10
+    assert payload["riskSummary"] == "조기 점검이 필요합니다."
+    assert contexts[0]["customer"]["id"] == "A"
+
+
+def test_pdf_endpoint_revalidates_report_and_returns_download(ai_client):
+    client, _contexts, rendered_reports = ai_client
+    report = client.post(
+        "/api/reports/A/generate", params={"as_of_month": "2025-12"}
+    ).json()
+
+    response = client.post("/api/reports/A/pdf", json=report)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "filename*=UTF-8''" in response.headers["content-disposition"]
+    assert response.content.startswith(b"%PDF-")
+    assert rendered_reports[0].corporateId == "A"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("corporateId", "B"),
+        ("customerName", "변조기업"),
+        ("asOfMonth", "2025-05"),
+        ("metrics", {"risk": 79.0, "clvRisk": 70.0, "potentialLoss": 30.0}),
+    ],
+)
+def test_pdf_endpoint_rejects_tampered_authoritative_evidence(ai_client, field, value):
+    client, _contexts, _rendered_reports = ai_client
+    report = client.post(
+        "/api/reports/A/generate", params={"as_of_month": "2025-12"}
+    ).json()
+    report[field] = value
+
+    response = client.post("/api/reports/A/pdf", json=report)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "보고서 근거 데이터가 현재 고객 데이터와 다릅니다."}
+
+
+def test_generate_report_returns_404_for_unknown_customer(ai_client):
+    client, _contexts, _rendered_reports = ai_client
+
+    response = client.post("/api/reports/UNKNOWN/generate")
+
+    assert response.status_code == 404
+
+
+def test_generate_report_redacts_provider_failure(service_database):
+    repository = ServiceRepository(lambda: connect_database(service_database))
+
+    def fail(_context):
+        raise ReportGenerationError("secret provider failure")
+
+    with TestClient(
+        create_app(repository, report_generator=fail), raise_server_exceptions=False
+    ) as client:
+        response = client.post("/api/reports/A/generate")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "AI 보고서 생성에 실패했습니다."}
+    assert "secret" not in response.text
+
+
+def test_pdf_endpoint_returns_safe_failure(service_database):
+    repository = ServiceRepository(lambda: connect_database(service_database))
+
+    def fail(_report):
+        raise PdfGenerationError("secret font path")
+
+    with TestClient(
+        create_app(
+            repository,
+            report_generator=lambda _context: generated_narrative(),
+            pdf_renderer=fail,
+        ),
+        raise_server_exceptions=False,
+    ) as client:
+        report = client.post("/api/reports/A/generate").json()
+        response = client.post("/api/reports/A/pdf", json=report)
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "PDF 보고서 생성에 실패했습니다."}
+    assert "secret" not in response.text
+
+
+def test_pdf_endpoint_rejects_invalid_schema(ai_client):
+    client, _contexts, _rendered_reports = ai_client
+
+    response = client.post("/api/reports/A/pdf", json={"corporateId": "A"})
+
+    assert response.status_code == 422
+
+
+def test_cors_preflight_allows_report_post(ai_client):
+    client, _contexts, _rendered_reports = ai_client
+
+    response = client.options(
+        "/api/reports/A/generate",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "POST" in response.headers["access-control-allow-methods"]
 
 
 def test_missing_customer_and_report_are_404(client):

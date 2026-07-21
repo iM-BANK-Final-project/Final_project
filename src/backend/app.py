@@ -4,22 +4,34 @@ import logging
 import os
 from pathlib import Path
 import sqlite3
-from typing import Annotated, Literal
+from datetime import datetime
+from typing import Annotated, Callable, Literal
+from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from src.backend.database import connect_database
+from src.backend.gemini_service import (
+    ReportGenerationError,
+    generate_strategy_report,
+)
+from src.backend.report_pdf import PdfGenerationError, render_strategy_report_pdf
 from src.backend.repository import DatabaseUnavailable, ServiceRepository
 from src.backend.schemas import (
     Customer,
     CustomerPage,
     FilterOptions,
+    GeneratedReport,
+    GeminiNarrative,
     Health,
     Overview,
     RecommendationPage,
     Report,
+    ReportMetrics,
+    ShapFactor,
 )
 
 
@@ -41,14 +53,19 @@ def _default_repository() -> ServiceRepository:
     return ServiceRepository(connection_factory)
 
 
-def create_app(repository: ServiceRepository | None = None) -> FastAPI:
+def create_app(
+    repository: ServiceRepository | None = None,
+    *,
+    report_generator: Callable[[dict], GeminiNarrative] = generate_strategy_report,
+    pdf_renderer: Callable[[GeneratedReport], bytes] = render_strategy_report_pdf,
+) -> FastAPI:
     application = FastAPI(title="RM Insight Service")
     application.state.repository = repository or _default_repository()
     application.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
         allow_credentials=True,
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
 
@@ -187,6 +204,102 @@ def create_app(repository: ServiceRepository | None = None) -> FastAPI:
         if result is None:
             raise HTTPException(status_code=404, detail="고객 보고서를 찾을 수 없습니다.")
         return result
+
+    def report_context(
+        corporate_id: str, request: Request, as_of_month: str | None
+    ) -> tuple[dict, str]:
+        active_repository = repo(request)
+        resolved_month = as_of_month
+        if resolved_month is None:
+            resolved_month = active_repository.filter_options(None)["asOfMonth"]
+        context = active_repository.report(corporate_id, resolved_month)
+        if context is None:
+            raise HTTPException(status_code=404, detail="고객 보고서를 찾을 수 없습니다.")
+        return context, resolved_month
+
+    def authoritative_report(
+        context: dict, month: str, narrative: GeminiNarrative
+    ) -> GeneratedReport:
+        customer = context["customer"]
+        return GeneratedReport(
+            corporateId=customer["id"],
+            customerName=customer["name"],
+            asOfMonth=month,
+            generatedAt=datetime.now(ZoneInfo("Asia/Seoul")),
+            metrics=ReportMetrics(
+                risk=customer["risk"],
+                clvRisk=customer["clvRisk"],
+                potentialLoss=customer["potentialLoss"],
+            ),
+            shapFactors=[ShapFactor.model_validate(item) for item in context["shapFactors"]],
+            **narrative.model_dump(),
+        )
+
+    @application.post(
+        "/api/reports/{corporate_id}/generate", response_model=GeneratedReport
+    )
+    def generate_report(
+        corporate_id: str, request: Request, as_of_month: AsOfMonth = None
+    ):
+        context, resolved_month = report_context(corporate_id, request, as_of_month)
+        try:
+            narrative = report_generator(context)
+        except ReportGenerationError as error:
+            LOGGER.warning("Gemini strategy report generation failed", exc_info=error)
+            raise HTTPException(
+                status_code=502, detail="AI 보고서 생성에 실패했습니다."
+            ) from error
+        return authoritative_report(context, resolved_month, narrative)
+
+    @application.post("/api/reports/{corporate_id}/pdf")
+    def download_report_pdf(
+        corporate_id: str, generated: GeneratedReport, request: Request
+    ):
+        context = repo(request).report(corporate_id, generated.asOfMonth)
+        if context is None:
+            raise HTTPException(
+                status_code=400,
+                detail="보고서 근거 데이터가 현재 고객 데이터와 다릅니다.",
+            )
+        customer = context["customer"]
+        expected_metrics = ReportMetrics(
+            risk=customer["risk"],
+            clvRisk=customer["clvRisk"],
+            potentialLoss=customer["potentialLoss"],
+        )
+        expected_factors = [
+            ShapFactor.model_validate(item) for item in context["shapFactors"]
+        ]
+        evidence_matches = (
+            generated.corporateId == corporate_id
+            and generated.customerName == customer["name"]
+            and generated.metrics == expected_metrics
+            and generated.shapFactors == expected_factors
+        )
+        if not evidence_matches:
+            raise HTTPException(
+                status_code=400,
+                detail="보고서 근거 데이터가 현재 고객 데이터와 다릅니다.",
+            )
+        try:
+            pdf_bytes = pdf_renderer(generated)
+        except PdfGenerationError as error:
+            LOGGER.error("AI strategy report PDF rendering failed", exc_info=error)
+            raise HTTPException(
+                status_code=500, detail="PDF 보고서 생성에 실패했습니다."
+            ) from error
+
+        ascii_name = f"ai_strategy_report_{corporate_id}_{generated.asOfMonth}.pdf"
+        korean_name = f"{generated.customerName}_AI_전략_보고서_{generated.asOfMonth}.pdf"
+        disposition = (
+            f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(korean_name)}"
+        )
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": disposition},
+        )
 
     return application
 
