@@ -25,6 +25,12 @@ def test_prepare_shap_evidence_rejects_retired_categorical_feature():
         prepare_shap_report_evidence([factor("CAT_사업장_시도_서울", 0.3, 1)])
 
 
+def test_prepare_shap_evidence_reports_exact_feature_count():
+    result = prepare_shap_report_evidence([factor("핵심거래_수준", 0.2, 1)])
+
+    assert result["featureCount"] == 56
+
+
 def test_prepare_shap_evidence_preserves_all_items_and_groups_same_axis():
     factors = [
         factor("요구불_TheilSen_추세", 0.6, 1, -0.2),
@@ -100,3 +106,13 @@ def test_prepare_shap_evidence_handles_zero_impact_without_invalid_shares():
     assert result["localShapTop10"][0]["top10AbsShare"] == 0
     assert result["groupedSignals"][0]["direction"] == "neutral"
     assert result["groupedSignals"][0]["top10AbsShare"] == 0
+
+
+def test_prepare_shap_evidence_rejects_overflowing_finite_aggregates():
+    factors = [
+        factor("핵심거래_수준", 1e308, 1),
+        factor("수신자산_수준", 1e308, 2),
+    ]
+
+    with pytest.raises(ValueError, match="aggregate"):
+        prepare_shap_report_evidence(factors)

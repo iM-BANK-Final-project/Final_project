@@ -125,7 +125,9 @@ def prepare_shap_report_evidence(shap_factors: list[dict]) -> dict:
     if [factor["rank"] for factor in ordered_factors] != expected_ranks:
         raise ValueError("SHAP ranks must be continuous from 1 without duplicates.")
 
-    total_absolute_shap = sum(abs(float(factor["impact"])) for factor in ordered_factors)
+    total_absolute_shap = _finite_sum(
+        abs(float(factor["impact"])) for factor in ordered_factors
+    )
     local_shap_top10 = []
     grouped_items: dict[str, list[dict]] = {}
     for factor in ordered_factors:
@@ -144,6 +146,7 @@ def prepare_shap_report_evidence(shap_factors: list[dict]) -> dict:
 
     return {
         "featureSet": "FS2_R1_DACK_DYNAMIC",
+        "featureCount": len(FS2_FEATURES),
         "localShapTop10": local_shap_top10,
         "groupedSignals": [
             _group_summary(group, items, total_absolute_shap)
@@ -173,10 +176,20 @@ def _absolute_share(impact: float, total_absolute_shap: float) -> float:
     return abs(impact) / total_absolute_shap
 
 
+def _finite_sum(values) -> float:
+    try:
+        total = math.fsum(values)
+    except OverflowError as error:
+        raise ValueError("SHAP aggregate must be finite.") from error
+    if not math.isfinite(total):
+        raise ValueError("SHAP aggregate must be finite.")
+    return total
+
+
 def _group_summary(group: str, items: list[dict], total_absolute_shap: float) -> dict:
     impacts = [float(item["impact"]) for item in items]
-    signed_shap = sum(impacts)
-    absolute_shap = sum(abs(impact) for impact in impacts)
+    signed_shap = _finite_sum(impacts)
+    absolute_shap = _finite_sum(abs(impact) for impact in impacts)
     directions = {_impact_direction(impact) for impact in impacts}
     direction = (
         "mixed"
