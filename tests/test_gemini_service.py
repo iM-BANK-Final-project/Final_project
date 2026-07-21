@@ -30,7 +30,11 @@ def report_context() -> dict:
             {
                 "feature": feature,
                 "featureValue": None,
-                "impact": -rank / 100 if rank in {2, 3, 4, 6, 8, 10} else rank / 100,
+                "impact": (
+                    0
+                    if rank == 7
+                    else -rank / 100 if rank in {2, 3, 4, 6, 8, 10} else rank / 100
+                ),
                 "rank": rank,
             }
             for rank, feature in enumerate(
@@ -94,6 +98,9 @@ def test_generate_strategy_report_uses_evidence_and_validates_narrative():
     assert '"rank": 10' in call["contents"]
     assert '"groupedSignals"' in call["contents"]
     assert "같은 그룹의 유사 피처는 하나의 종합 신호" in call["contents"]
+    assert "모든 원시 Top 10 항목을 권위 있는 입력 근거로 검토하세요" in call["contents"]
+    assert "각 피처를 개별적으로 모두 언급할 필요는 없습니다" in call["contents"]
+    assert "일부만 선택하거나 생략하지 마세요" not in call["contents"]
     assert "업종·지역·고객등급·전담여부는 모델 피처가 아닙니다" in call["contents"]
     assert "PotentialLoss" in call["contents"]
     assert "SHAP은 인과관계가 아닙니다" in call["contents"]
@@ -159,6 +166,8 @@ def test_generate_strategy_report_adds_canonical_limitations_once():
         )
         == 1
     )
+    assert "해지 확률이 아닙니다." not in result.caveats
+    assert "지속거래약화 가능성이 아닙니다." not in result.caveats
     assert (
         result.caveats.count(
             "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다."
@@ -195,6 +204,75 @@ def test_generate_strategy_report_allows_feature_value_without_protective_claim(
     result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
 
     assert result.weakeningDrivers == "핵심거래_수준은 최근 낮은 수준입니다."
+
+
+def test_generate_strategy_report_allows_correct_mixed_direction_clauses():
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = (
+        "여신관계_수준은 위험점수를 낮춘 요인이나 핵심거래_수준은 리스크를 높인 요인입니다."
+    )
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.weakeningDrivers == payload["weakeningDrivers"]
+
+
+@pytest.mark.parametrize(
+    "drivers",
+    [
+        "여신관계_수준은 리스크를 증가시킨 요인입니다.",
+        "핵심거래_수준은 위험도를 낮춘 보호 요인입니다.",
+        "위험점수를 높인 요인은 여신관계_수준입니다.",
+    ],
+)
+def test_generate_strategy_report_rejects_alternate_conflicting_direction_wording(drivers):
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = drivers
+
+    with pytest.raises(ReportGenerationError):
+        generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+
+@pytest.mark.parametrize(
+    "drivers",
+    [
+        "관계영역_활성폭은 위험도를 높인 요인입니다.",
+        "관계영역_활성폭은 리스크를 낮춘 보호 요인입니다.",
+    ],
+)
+def test_generate_strategy_report_rejects_neutral_feature_direction_claims(drivers):
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = drivers
+
+    with pytest.raises(ReportGenerationError):
+        generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+
+def test_generate_strategy_report_allows_independent_risk_percentage_with_shap_description():
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = (
+        "지속거래약화 가능성은 80%이며 SHAP은 모델 예측 기여도입니다."
+    )
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.weakeningDrivers == payload["weakeningDrivers"]
+
+
+@pytest.mark.parametrize(
+    "drivers",
+    [
+        "SHAP 0.31이므로 위험도는 3%p 증가했습니다.",
+        "SHAP 값 때문에 리스크가 10bp 상승했습니다.",
+        "SHAP 0.2만큼 위험점수가 높아졌습니다.",
+    ],
+)
+def test_generate_strategy_report_rejects_shap_linked_probability_changes(drivers):
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = drivers
+
+    with pytest.raises(ReportGenerationError):
+        generate_strategy_report(report_context(), client=fake_client(parsed=payload))
 
 
 def test_generate_strategy_report_replaces_overlapping_caveats_with_canonical_set():
