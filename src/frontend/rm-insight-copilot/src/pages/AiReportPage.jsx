@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ExpandableText from "../components/ExpandableText.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import { apiPost, apiPostBlob } from "../api/client.js";
 import { useApi } from "../hooks/useApi.js";
 
 const impactFormatter = new Intl.NumberFormat("ko-KR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
+const scoreFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 
 function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) {
   const reportState = useApi(`/api/reports/${encodeURIComponent(selectedId)}`, {
@@ -21,6 +23,74 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
   const shapFactors = report?.shapFactors ?? [];
   const signals = customer?.signals ?? [];
   const selectedCustomerIsListed = customers.some((item) => item.id === selectedId);
+  const [generatedReport, setGeneratedReport] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
+  const generationRequest = useRef(0);
+
+  useEffect(() => {
+    generationRequest.current += 1;
+    setGeneratedReport(null);
+    setGenerating(false);
+    setGenerationError(null);
+    setDownloading(false);
+    setDownloadError(null);
+  }, [selectedId, asOfMonth]);
+
+  async function generateReport() {
+    const requestId = generationRequest.current + 1;
+    generationRequest.current = requestId;
+    setGenerating(true);
+    setGenerationError(null);
+    setDownloadError(null);
+    try {
+      const result = await apiPost(
+        `/api/reports/${encodeURIComponent(selectedId)}/generate`,
+        {},
+        { as_of_month: asOfMonth }
+      );
+      if (generationRequest.current === requestId) setGeneratedReport(result);
+    } catch (requestError) {
+      if (generationRequest.current === requestId) {
+        setGenerationError(
+          requestError?.message || "AI 보고서 생성에 실패했습니다."
+        );
+      }
+    } finally {
+      if (generationRequest.current === requestId) setGenerating(false);
+    }
+  }
+
+  async function downloadPdf() {
+    if (!generatedReport) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const { blob, filename } = await apiPostBlob(
+        `/api/reports/${encodeURIComponent(selectedId)}/pdf`,
+        generatedReport
+      );
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch (requestError) {
+      setDownloadError(
+        requestError?.message || "PDF 보고서 생성에 실패했습니다."
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="report-layout">
@@ -42,8 +112,23 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
               </option>
             ))}
           </select>
-          <button type="button" className="primary-button">전략 보고서 생성</button>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={generating}
+            onClick={generateReport}
+          >
+            {generating ? "보고서 생성 중..." : "전략 보고서 생성"}
+          </button>
         </div>
+        {generationError && (
+          <div className="ai-report-error" role="alert">
+            <span>{generationError}</span>
+            <button type="button" className="mini-button" onClick={generateReport}>
+              보고서 생성 재시도
+            </button>
+          </div>
+        )}
         {reportState.loading && <LoadingState message="저장된 보고서를 불러오는 중입니다." />}
         {reportState.error && <ErrorState error={reportState.error} onRetry={reportState.retry} />}
         {!reportState.loading && !reportState.error && shapFactors.length === 0 && (
@@ -123,9 +208,78 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
           </>
         )}
         <small className="report-note">
-          이 화면은 사전에 저장된 검증 완료 지속거래약화 위험, 설명값, 추천 결과를 조회합니다.
-          웹에서 모델 또는 LLM을 실행하거나 결과를 재계산하지 않습니다.
+          검증 완료된 위험, CLV, SHAP과 추천 결과는 재계산하지 않습니다.
+          AI 보고서는 생성 요청 시 이 근거만 Gemini에 전달해 작성합니다.
         </small>
+        {generatedReport && (
+          <section className="generated-ai-report" aria-labelledby="generated-report-title">
+            <div className="generated-report-heading">
+              <div>
+                <StatusBadge tone="mint">Gemini AI Report</StatusBadge>
+                <h3 id="generated-report-title">AI 전략 보고서</h3>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={downloading}
+                onClick={downloadPdf}
+              >
+                {downloading ? "PDF 생성 중..." : "PDF 다운로드"}
+              </button>
+            </div>
+            {downloadError && (
+              <p className="ai-report-error-text" role="alert">{downloadError}</p>
+            )}
+            <div className="generated-report-metrics">
+              <div>
+                <span>지속거래약화 위험</span>
+                <strong>{scoreFormatter.format(generatedReport.metrics.risk)}%</strong>
+              </div>
+              <div>
+                <span>CLV_Risk</span>
+                <strong>{scoreFormatter.format(generatedReport.metrics.clvRisk)}</strong>
+              </div>
+              <div>
+                <span>PotentialLoss</span>
+                <strong>{scoreFormatter.format(generatedReport.metrics.potentialLoss)}</strong>
+              </div>
+            </div>
+            <div className="generated-report-grid">
+              <article>
+                <h4>AI 종합 위험 요약</h4>
+                <p>{generatedReport.riskSummary}</p>
+              </article>
+              <article>
+                <h4>고객가치 및 잠재손실 해석</h4>
+                <p>{generatedReport.valueAssessment}</p>
+              </article>
+              <article>
+                <h4>주요 약화 원인</h4>
+                <p>{generatedReport.weakeningDrivers}</p>
+              </article>
+              <article>
+                <h4>RM 접촉 전략</h4>
+                <p>{generatedReport.contactStrategy}</p>
+              </article>
+              <article>
+                <h4>실행 권고사항</h4>
+                <ol>
+                  {generatedReport.recommendedActions.map((action) => (
+                    <li key={action}>{action}</li>
+                  ))}
+                </ol>
+              </article>
+              <article className="generated-report-caveats">
+                <h4>분석 유의사항</h4>
+                <ul>
+                  {generatedReport.caveats.map((caveat) => (
+                    <li key={caveat}>{caveat}</li>
+                  ))}
+                </ul>
+              </article>
+            </div>
+          </section>
+        )}
       </section>
     </div>
   );
