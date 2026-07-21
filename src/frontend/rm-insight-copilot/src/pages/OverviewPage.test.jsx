@@ -14,7 +14,7 @@ const overview = {
   managedCustomerCount: 27,
   averageRisk: 63.25,
   highRiskShare: 18.4,
-  priorityValueTotal: 12.345,
+  potentialLossTotal: 12.345,
   monthlyTrend: [
     { month: "2025-05", risk: 0, managed: 20 },
     { month: "2025-06", risk: 63.25, managed: 27 }
@@ -35,12 +35,10 @@ const topCustomer = {
   riskLevel: "고위험",
   risk: 81.25,
   health: 18.75,
-  valueProxy: 0.9,
-  priorityScore: 0.73125,
-  priorityRank: 1,
+  clvRisk: 7.5,
+  potentialLoss: 2.5,
+  defenseRank: 1,
   weakeningType: "입출금",
-  profitability: null,
-  defenseValue: null,
   signals: []
 };
 
@@ -73,7 +71,8 @@ describe("OverviewPage", () => {
     expect(screen.getByText("63.3%")).toBeInTheDocument();
     expect(screen.getByText("18.4%")).toBeInTheDocument();
     expect(screen.getByText("12.35")).toBeInTheDocument();
-    expect(screen.getByText("CRM 우선순위 점수")).toBeInTheDocument();
+    expect(screen.getByText("잠재손실 방어대상 합계")).toBeInTheDocument();
+    expect(screen.getByText(/확정 회계손실이 아닙니다/)).toBeInTheDocument();
     expect(screen.queryByText("알파코")).not.toBeInTheDocument();
   });
 

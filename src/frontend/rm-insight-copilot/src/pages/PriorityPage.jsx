@@ -33,8 +33,8 @@ export default function PriorityPage({ onRecommendationOpen }) {
     <main className="page">
       <SectionHeader
         eyebrow="CRM Priority"
-        title="고객가치 기반 CRM 관리 우선순위"
-        description="지속거래약화 위험과 고객가치 대리지표를 결합한 RM 운영 순서용 점수로 먼저 볼 고객을 정렬합니다."
+        title="FISIM CLV 기반 관리 우선순위"
+        description="PotentialLoss가 양수인 고객을 방어순위로 정렬해 먼저 관리할 대상을 확인합니다."
       />
       <div className="filter-bar">
         <select aria-label="업종" value={industry} onChange={(event) => setIndustry(event.target.value)}>
@@ -85,33 +85,31 @@ export default function PriorityPage({ onRecommendationOpen }) {
         <table>
           <thead>
             <tr>
-              <th>순위</th>
+              <th>방어순위</th>
               <th>법인ID</th>
               <th>기업명</th>
               <th>업종</th>
               <th>지역</th>
               <th>전담</th>
               <th>지속거래약화 위험</th>
-              <th>고객가치 대리지표</th>
-              <th>수익성</th>
-              <th>CRM 우선순위 점수</th>
+              <th>CLV_Risk</th>
+              <th>PotentialLoss</th>
               <th>주요 약화 유형</th>
               <th>액션</th>
             </tr>
           </thead>
           <tbody>
-            {customers.map((customer, index) => (
+            {customers.map((customer) => (
               <tr key={customer.id}>
-                <td>{customer.priorityRank ?? index + 1}</td>
+                <td>{customer.defenseRank ?? "-"}</td>
                 <td><ExpandableText text={customer.id} label="법인ID" /></td>
                 <td><strong><ExpandableText text={customer.name} label="기업명" /></strong></td>
                 <td>{customer.industry}</td>
                 <td>{customer.region}</td>
                 <td>{customer.dedicated}</td>
                 <td>{percentFormatter.format(customer.risk)}%</td>
-                <td>{scoreFormatter.format(customer.valueProxy)}</td>
-                <td>{customer.profitability == null ? "-" : scoreFormatter.format(customer.profitability)}</td>
-                <td>{scoreFormatter.format(customer.priorityScore)}</td>
+                <td>{scoreFormatter.format(customer.clvRisk)}</td>
+                <td>{scoreFormatter.format(customer.potentialLoss)}</td>
                 <td><StatusBadge tone="mint">{customer.weakeningType}</StatusBadge></td>
                 <td>
                   <button className="mini-button" onClick={() => onRecommendationOpen(customer.id)}>
@@ -123,6 +121,9 @@ export default function PriorityPage({ onRecommendationOpen }) {
           </tbody>
         </table>
       </div>
+      <small className="report-note">
+        FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+      </small>
     </main>
   );
 }

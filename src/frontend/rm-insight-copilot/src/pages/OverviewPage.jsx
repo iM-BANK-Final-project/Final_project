@@ -94,9 +94,9 @@ export default function OverviewPage({ onPageChange }) {
             tone="amber"
           />
           <KpiCard
-            label="CRM 우선순위 점수"
-            value={scoreFormatter.format(overview.priorityValueTotal)}
-            detail="RM 운영 순서용 합산 점수"
+            label="잠재손실 방어대상 합계"
+            value={scoreFormatter.format(overview.potentialLossTotal)}
+            detail="FISIM 기반 추정치이며 확정 회계손실이 아닙니다."
             tone="blue"
           />
         </section>

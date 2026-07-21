@@ -19,6 +19,7 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
   const customer = report?.customer;
   const recommendation = report?.recommendation;
   const shapFactors = report?.shapFactors ?? [];
+  const signals = customer?.signals ?? [];
   const selectedCustomerIsListed = customers.some((item) => item.id === selectedId);
 
   return (
@@ -75,11 +76,11 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
         {!reportState.loading && !reportState.error && report && (
           <>
             <h3>
-              <ExpandableText text={customer.name} label="기업명" lines={2} />
+              <ExpandableText text={customer?.name ?? selectedId} label="기업명" lines={2} />
             </h3>
-            <p>{report.strategySummary}</p>
+            <p>{report.strategySummary || "저장된 전략 요약이 없습니다."}</p>
             <div className="waterfall">
-              {(customer.signals ?? []).map((signal) => {
+              {signals.map((signal) => {
                 const hasChange = signal.change != null;
                 const width = hasChange ? Math.min(Math.abs(signal.change) * 2.3, 92) : 0;
 
@@ -93,17 +94,23 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
                 );
               })}
             </div>
-            {(customer.signals ?? []).length === 0 && (
+            {signals.length === 0 && (
               <EmptyState message="저장된 약화 신호가 없습니다." />
             )}
-            <div className="action-box">
-              <span>우선 접촉</span>
-              <strong>{recommendation.contact}</strong>
-            </div>
-            <div className="action-box pale">
-              <span>추천 접촉 전략</span>
-              <strong>{recommendation.action}</strong>
-            </div>
+            {recommendation ? (
+              <div className="report-actions">
+                <div className="action-box">
+                  <span>우선 접촉</span>
+                  <strong>{recommendation.contact || "접촉 전략 미지정"}</strong>
+                </div>
+                <div className="action-box pale">
+                  <span>추천 접촉 전략</span>
+                  <strong>{recommendation.action || "추천 액션 미지정"}</strong>
+                </div>
+              </div>
+            ) : (
+              <EmptyState message="저장된 추천 접촉 전략이 없습니다." />
+            )}
           </>
         )}
         <small className="report-note">
@@ -120,7 +127,7 @@ function ReportData({ asOfMonth, selectedCustomerId }) {
     as_of_month: asOfMonth,
     page: 1,
     page_size: 200,
-    sort_by: "priority_rank",
+    sort_by: "defense_rank",
     sort_order: "asc"
   });
   const customers = customersState.data?.items ?? [];

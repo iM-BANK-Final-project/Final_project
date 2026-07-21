@@ -788,11 +788,12 @@ button,
 .two-column,
 .report-layout {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
   gap: 1rem;
 }
 
 .panel {
+  min-width: 0;
   padding: 1.15rem;
 }
 
@@ -1168,7 +1169,19 @@ td:nth-child(9) {
 }
 
 .report-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
   margin: 0 0 1rem;
+}
+
+.report-controls select {
+  min-width: min(100%, 18rem);
+  flex: 1 1 18rem;
+}
+
+.report-controls .primary-button {
+  flex: 0 0 auto;
 }
 
 .beeswarm,
@@ -1179,17 +1192,23 @@ td:nth-child(9) {
 
 .bee-row {
   display: grid;
-  grid-template-columns: 150px 1fr 46px;
+  grid-template-columns: minmax(9rem, 0.9fr) minmax(9rem, 1.4fr) 3.5rem;
   gap: 0.7rem;
   align-items: center;
+  min-width: 0;
 }
 
 .bee-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
+  white-space: nowrap;
 }
 
 .bee-row strong {
+  text-align: right;
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-black);
@@ -1217,18 +1236,21 @@ td:nth-child(9) {
   display: grid;
   gap: 1rem;
   align-content: start;
+  min-width: 0;
 }
 
 .report-card h3 {
   margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-black);
-  letter-spacing: -0.04em;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.035em;
+  line-height: 1.15;
 }
 
 .waterfall div {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .waterfall span {
@@ -1240,6 +1262,7 @@ td:nth-child(9) {
 .waterfall b {
   display: block;
   min-width: 3.2rem;
+  max-width: 100%;
   border-radius: 999px;
   padding: 0.45rem 0.6rem;
   background: linear-gradient(90deg, var(--coral), var(--amber));
@@ -1247,6 +1270,28 @@ td:nth-child(9) {
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-black);
+  white-space: nowrap;
+}
+
+.report-actions {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.report-card .action-box {
+  align-items: center;
+}
+
+.report-card .action-box strong {
+  max-width: 72%;
+}
+
+.report-card .page-state {
+  min-height: auto;
+  border: 1px dashed rgba(0, 199, 169, 0.28);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  background: rgba(233, 251, 247, 0.46);
 }
 
 .page-state {

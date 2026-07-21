@@ -29,12 +29,10 @@ const customer = {
   riskLevel: "고위험",
   risk: 81.25,
   health: 18.75,
-  valueProxy: 0.8,
-  priorityScore: 0.65,
-  priorityRank: 2,
+  clvRisk: 5.5,
+  potentialLoss: 1.5,
+  defenseRank: 2,
   weakeningType: "채널",
-  profitability: null,
-  defenseValue: null,
   signals: [{ label: "채널활동", change: -31.5, recent: 68, previous: 99 }]
 };
 
