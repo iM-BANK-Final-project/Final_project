@@ -28,12 +28,26 @@ def report_context() -> dict:
         "strategySummary": "복합 거래활동 회복을 우선 상담합니다.",
         "shapFactors": [
             {
-                "feature": f"feature_{rank}",
+                "feature": feature,
                 "featureValue": None,
-                "impact": rank / 100,
+                "impact": -rank / 100 if rank in {2, 3, 4, 6, 8, 10} else rank / 100,
                 "rank": rank,
             }
-            for rank in range(1, 11)
+            for rank, feature in enumerate(
+                [
+                    "핵심거래_수준",
+                    "수신자산_수준",
+                    "여신관계_수준",
+                    "수신상품_활성폭",
+                    "여신세부상품_활성폭",
+                    "채널_활성폭",
+                    "관계영역_활성폭",
+                    "요구불_최근3대직전3_로그차이",
+                    "자동이체_TheilSen_추세",
+                    "카드_현재월대직전6_로그차이",
+                ],
+                start=1,
+            )
         ],
     }
 
@@ -75,7 +89,12 @@ def test_generate_strategy_report_uses_evidence_and_validates_narrative():
     assert result.riskSummary == "조기 점검이 필요합니다."
     call = client.models.calls[0]
     assert call["model"]
-    assert "feature_10" in call["contents"]
+    assert '"featureSet": "FS2_R1_DACK_DYNAMIC"' in call["contents"]
+    assert '"featureCount": 56' in call["contents"]
+    assert '"rank": 10' in call["contents"]
+    assert '"groupedSignals"' in call["contents"]
+    assert "같은 그룹의 유사 피처는 하나의 종합 신호" in call["contents"]
+    assert "업종·지역·고객등급·전담여부는 모델 피처가 아닙니다" in call["contents"]
     assert "PotentialLoss" in call["contents"]
     assert "SHAP은 인과관계가 아닙니다" in call["contents"]
     assert "확정 손실액이 아닙니다" in call["contents"]
@@ -127,3 +146,79 @@ def test_generate_strategy_report_falls_back_from_vertex_to_api_key(monkeypatch)
 
     assert result.riskSummary
     assert calls == [False, True]
+
+
+def test_generate_strategy_report_adds_canonical_limitations_once():
+    client = fake_client(parsed=valid_narrative())
+
+    result = generate_strategy_report(report_context(), client=client)
+
+    assert (
+        result.caveats.count(
+            "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다."
+        )
+        == 1
+    )
+    assert (
+        result.caveats.count(
+            "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다."
+        )
+        == 1
+    )
+    assert (
+        result.caveats.count(
+            "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다."
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "drivers",
+    [
+        "SHAP 0.31이므로 위험확률이 31% 증가했습니다.",
+        "여신관계_수준은 SHAP이 음수지만 위험점수를 높인 요인입니다.",
+    ],
+)
+def test_generate_strategy_report_rejects_unsafe_shap_claims(drivers):
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = drivers
+
+    with pytest.raises(ReportGenerationError):
+        generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+
+def test_generate_strategy_report_allows_feature_value_without_protective_claim():
+    payload = valid_narrative()
+    payload["weakeningDrivers"] = "핵심거래_수준은 최근 낮은 수준입니다."
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.weakeningDrivers == "핵심거래_수준은 최근 낮은 수준입니다."
+
+
+def test_generate_strategy_report_replaces_overlapping_caveats_with_canonical_set():
+    payload = valid_narrative()
+    payload["caveats"] = [
+        "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다.",
+        "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다.",
+        "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
+        "RM 검토가 필요합니다.",
+        "접촉 전 최신 거래를 확인하세요.",
+        "정량 근거를 함께 검토하세요.",
+    ]
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert len(result.caveats) == 6
+    assert result.caveats[:3] == [
+        "RM 검토가 필요합니다.",
+        "접촉 전 최신 거래를 확인하세요.",
+        "정량 근거를 함께 검토하세요.",
+    ]
+    assert result.caveats[-3:] == [
+        "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다.",
+        "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다.",
+        "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
+    ]
+    assert result.valueAssessment == "확정 손실이 아닌 시나리오입니다."
