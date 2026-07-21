@@ -36,8 +36,12 @@ def test_shap_llm_guide_states_operational_limits_and_raw_top10_contract():
     assert "특정 피처의 방향과 반대되는" in text
     assert "개별 해지 확률, 부도 확률, 휴면 확률 표현은" in text
     assert "해지·부도·휴면 확률이라는 표현은" not in text
-    assert "문장 안의 downstream 부정 표현" in text
-    assert "부정 문맥이면 원문을 보존" in text
+    assert "문장 안의 downstream 부정 표현" not in text
+    assert "부정 문맥이면 원문을 보존" not in text
     assert "Top 10 내부 절대 SHAP 비중은 허용" in text
     assert "위험·확률의 수치 변화나 결과값에 결합" in text
     assert "명시적으로 부정된 방향 표현은 방향 판정에서 제외" in text
+    assert "직접 결합된 부정 predicate" in text
+    assert "무관한 downstream 부정은 정규화를 막지 않는다" in text
+    assert "허용된 Top 10 비중 span만 marker로 치환" in text
+    assert "나머지 clause의 위험·확률 수치 결합 검사를 계속" in text

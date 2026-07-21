@@ -283,6 +283,7 @@ def test_generate_strategy_report_checks_every_repeated_feature_occurrence():
         "여신관계_수준은 리스크를 증가시킨 요인입니다.",
         "핵심거래_수준은 위험도를 낮춘 보호 요인입니다.",
         "위험점수를 높인 요인은 여신관계_수준입니다.",
+        "여신관계_수준은 위험을 높인 요인으로 평가되어 별도 이견은 없습니다.",
     ],
 )
 def test_generate_strategy_report_rejects_alternate_conflicting_direction_wording(drivers):
@@ -330,15 +331,21 @@ def test_generate_strategy_report_allows_independent_percentage_and_shap_directi
     assert result.weakeningDrivers == payload["weakeningDrivers"]
 
 
-def test_generate_strategy_report_allows_top10_internal_absolute_shap_share():
+@pytest.mark.parametrize(
+    "drivers",
+    [
+        "Top 10 절대 SHAP 합의 31%를 차지하며 위험을 높이는 방향으로 기여했습니다.",
+        "Top 10 절대 SHAP 합 기준 비중은 31%로 위험을 높이는 방향입니다.",
+        "top10AbsShare는 31%이며 위험을 높이는 방향입니다.",
+    ],
+)
+def test_generate_strategy_report_allows_top10_internal_absolute_shap_share(drivers):
     payload = valid_narrative()
-    payload["weakeningDrivers"] = (
-        "Top 10 절대 SHAP 합의 31%를 차지하며 위험을 높이는 방향으로 기여했습니다."
-    )
+    payload["weakeningDrivers"] = drivers
 
     result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
 
-    assert result.weakeningDrivers == payload["weakeningDrivers"]
+    assert result.weakeningDrivers == drivers
 
 
 @pytest.mark.parametrize(
@@ -350,6 +357,8 @@ def test_generate_strategy_report_allows_top10_internal_absolute_shap_share():
         "SHAP은 위험확률을 0.31만큼 올렸습니다.",
         "SHAP 0.31로 위험도가 0.31 상승했습니다.",
         "SHAP 0.31로 위험확률은 0.62입니다.",
+        "Top 10 절대 SHAP 합의 31%를 차지하며 SHAP 때문에 위험확률이 31%p 변했습니다.",
+        "top10AbsShare는 31%지만 위험확률을 10%p 높였습니다.",
     ],
 )
 def test_generate_strategy_report_rejects_shap_linked_probability_changes(drivers):
@@ -419,6 +428,31 @@ def test_generate_strategy_report_normalizes_positive_event_probability_term():
     result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
 
     assert result.riskSummary == "지속거래약화 가능성이 높습니다."
+
+
+def test_generate_strategy_report_normalizes_event_with_unrelated_later_negation():
+    payload = valid_narrative()
+    payload["riskSummary"] = "해지 확률이 80%이지만 확정 손실은 아닙니다."
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.riskSummary == "지속거래약화 가능성이 80%이지만 확정 손실은 아닙니다."
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "지속거래약화 가능성은 높지만 확정 손실은 아닙니다.",
+        "지속거래약화 가능성은 실제 해지 확률이 아닙니다.",
+    ],
+)
+def test_generate_strategy_report_preserves_safe_target_limitations(summary):
+    payload = valid_narrative()
+    payload["riskSummary"] = summary
+
+    result = generate_strategy_report(report_context(), client=fake_client(parsed=payload))
+
+    assert result.riskSummary == summary
 
 
 def test_generate_strategy_report_replaces_overlapping_caveats_with_canonical_set():

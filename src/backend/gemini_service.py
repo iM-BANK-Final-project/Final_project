@@ -21,8 +21,9 @@ CANONICAL_CAVEATS = (
     "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
 )
 EVENT_PROBABILITY_TERMS = re.compile(r"(?:실제\s*)?(?:해지|부도|휴면)\s*확률")
-TARGET_PROBABILITY_TERM = re.compile(r"지속거래약화 가능성")
-NEGATION_WORDING = re.compile(r"(?:아니|아닙|않|없)")
+DIRECT_EVENT_NEGATION = re.compile(
+    r"^\s*(?:(?:이|가|은|는)\s*(?:결코\s*)?아(?:니|닙)|(?:이)?라고\s*볼\s*수\s*없|(?:으)?로\s*해석하지\s*않|(?:을|를)\s*(?:의미|뜻|간주)[^,.!?;\n]{0,24}(?:아니|아닙|않|없)|모델(?:을|를)?\s*사용하지\s*않)"
+)
 SHAP_TERM = re.compile(r"SHAP", re.IGNORECASE)
 SHAP_QUANTIFIED_CHANGE = re.compile(
     r"(?:\d+(?:\.\d+)?\s*(?:%p|퍼센트포인트|percentage\s+points?|bp|bps|basis\s+points?|%|퍼센트)|\d+(?:\.\d+)?\s*만큼)",
@@ -41,11 +42,16 @@ PROTECTIVE_WORDING = re.compile(
 LOCAL_CLAUSE_BOUNDARY = re.compile(
     r"[,;]|(?:그러나|하지만|반면|다만|이고|이며|이나|지만|으나|는데)(?=\s)"
 )
+PROBABILITY_CLAUSE_BOUNDARY = re.compile(
+    r"[,;]|(?:그리고|이고|이며|이나)(?=\s)"
+)
 CONTRAST_MARKERS = frozenset({"그러나", "하지만", "반면", "다만", "지만", "으나", "는데"})
 DIRECTION_ATTRIBUTION = re.compile(r"(?:요인|기여)")
-DIRECTION_NEGATION = re.compile(r"(?:아니|아닙|않|없)")
-TOP10_INTERNAL_SHAP_SHARE = re.compile(
-    rf"(?:Top\s*10|상위\s*10)[^,;.!?\n]{{0,40}}(?:절대\s*)?SHAP[^,;.!?\n]{{0,40}}{NUMBER}\s*(?:%|퍼센트)(?:를|을)?\s*(?:차지|비중)",
+DIRECT_DIRECTION_NEGATION = re.compile(
+    r"^\s*(?:(?:이|지)?\s*않|(?:은|는|이|가)?\s*없|(?:인|이는?|춘|추는)?\s*(?:(?:보호\s*)?(?:요인|기여|신호))?\s*(?:이|가|은|는)?\s*아(?:니|닙))"
+)
+TOP10_SHARE_SPAN = re.compile(
+    rf"(?:(?:Top\s*10|Top10|상위\s*10)[^,;.!?\n]{{0,40}}SHAP[^,;.!?\n]{{0,30}}{NUMBER}\s*(?:%|퍼센트)(?:를|을)?\s*(?:차지|비중)|(?:Top\s*10|Top10|상위\s*10)[^,;.!?\n]{{0,40}}SHAP[^,;.!?\n]{{0,30}}비중(?:은|는|이|가|:)?\s*{NUMBER}\s*(?:%|퍼센트)|top10AbsShare(?:는|은|이|가|:)?\s*{NUMBER}\s*(?:%|퍼센트))",
     re.IGNORECASE,
 )
 RISK_NUMERIC_CHANGE_OR_RESULT = re.compile(
@@ -204,22 +210,11 @@ def postprocess_strategy_narrative(
 
 def _normalize_event_probability_term(text: str) -> str:
     def replace(match: re.Match) -> str:
-        if _has_downstream_sentence_negation(match.string, match.end()):
+        if DIRECT_EVENT_NEGATION.match(match.string[match.end() :]):
             return match.group(0)
         return "지속거래약화 가능성"
 
-    normalized = EVENT_PROBABILITY_TERMS.sub(replace, text)
-    if any(
-        _has_downstream_sentence_negation(normalized, match.end())
-        for match in TARGET_PROBABILITY_TERM.finditer(normalized)
-    ):
-        raise ValueError("지속거래약화 가능성을 부정하는 표현은 허용되지 않습니다.")
-    return normalized
-
-
-def _has_downstream_sentence_negation(text: str, start: int) -> bool:
-    sentence_tail = re.split(r"(?<!\d)[.!?]|\n", text[start:], maxsplit=1)[0]
-    return bool(NEGATION_WORDING.search(sentence_tail))
+    return EVENT_PROBABILITY_TERMS.sub(replace, text)
 
 
 def _reject_unsafe_shap_claims(narrative: dict, shap_evidence: dict) -> None:
@@ -234,7 +229,7 @@ def _reject_unsafe_shap_claims(narrative: dict, shap_evidence: dict) -> None:
 
     for text in texts:
         for sentence in re.split(r"(?<=[!?])\s*|(?<!\d)\.(?:\s*|$)|\n+", text):
-            for clause in _local_clauses(sentence):
+            for clause in _probability_clauses(sentence):
                 if _has_shap_linked_probability_claim(clause):
                     raise ValueError("SHAP 값을 확률 또는 비율 변화로 설명할 수 없습니다.")
             for feature, direction, clause in _feature_direction_clauses(sentence, directions):
@@ -249,46 +244,41 @@ def _reject_unsafe_shap_claims(narrative: dict, shap_evidence: dict) -> None:
 
 
 def _has_shap_linked_probability_claim(sentence: str) -> bool:
-    if not SHAP_TERM.search(sentence):
+    masked = TOP10_SHARE_SPAN.sub(" SHAP_TOP10_SHARE ", sentence)
+    if not SHAP_TERM.search(masked):
         return False
-    if RISK_NUMERIC_CHANGE_OR_RESULT.search(sentence) or RISK_CHANGE_THEN_NUMBER.search(
-        sentence
+    if RISK_NUMERIC_CHANGE_OR_RESULT.search(masked) or RISK_CHANGE_THEN_NUMBER.search(
+        masked
     ):
         return True
-    if TOP10_INTERNAL_SHAP_SHARE.search(sentence):
-        return False
-    if not SHAP_QUANTIFIED_CHANGE.search(sentence):
+    if not SHAP_QUANTIFIED_CHANGE.search(masked):
         return False
     return bool(
-        SHAP_CAUSAL_CONNECTOR.search(sentence)
-        or _has_active_direction_wording(sentence, RISK_UP_WORDING)
-        or _has_active_direction_wording(sentence, PROTECTIVE_WORDING)
+        SHAP_CAUSAL_CONNECTOR.search(masked)
+        or _has_active_direction_wording(masked, RISK_UP_WORDING)
+        or _has_active_direction_wording(masked, PROTECTIVE_WORDING)
     )
 
 
 def _has_active_direction_wording(clause: str, pattern: re.Pattern) -> bool:
     return any(
-        not _direction_match_is_negated(clause, match, pattern)
+        not _direction_match_is_negated(clause, match)
         for match in pattern.finditer(clause)
     )
 
 
-def _direction_match_is_negated(
-    clause: str, match: re.Match, pattern: re.Pattern
-) -> bool:
-    tail = clause[match.end() : match.end() + 40]
-    negation = DIRECTION_NEGATION.search(tail)
-    if negation is None:
-        return False
-    opposite_pattern = (
-        PROTECTIVE_WORDING if pattern is RISK_UP_WORDING else RISK_UP_WORDING
-    )
-    opposite_direction = opposite_pattern.search(tail)
-    return opposite_direction is None or negation.start() < opposite_direction.start()
+def _direction_match_is_negated(clause: str, match: re.Match) -> bool:
+    return bool(DIRECT_DIRECTION_NEGATION.match(clause[match.end() :]))
 
 
 def _local_clauses(sentence: str) -> list[str]:
     return [clause for clause in LOCAL_CLAUSE_BOUNDARY.split(sentence) if clause]
+
+
+def _probability_clauses(sentence: str) -> list[str]:
+    return [
+        clause for clause in PROBABILITY_CLAUSE_BOUNDARY.split(sentence) if clause
+    ]
 
 
 def _feature_direction_clauses(sentence: str, directions: dict[str, str]):
