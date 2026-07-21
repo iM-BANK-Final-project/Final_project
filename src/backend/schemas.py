@@ -1,6 +1,24 @@
-"""Public response models for the RM insight read API."""
+"""Public response models for the RM insight API."""
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import AwareDatetime, BaseModel, Field, StringConstraints, model_validator
+
+
+ShortText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
+]
+NarrativeText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)
+]
+CorporateId = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
+]
+CustomerName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)
+]
+AsOfMonth = Annotated[str, Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")]
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 
 
 class Signal(BaseModel):
@@ -97,6 +115,37 @@ class Report(BaseModel):
     strategySummary: str
     shapAvailable: bool
     shapFactors: list[ShapFactor]
+
+
+class ReportMetrics(BaseModel):
+    risk: Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
+    clvRisk: FiniteFloat
+    potentialLoss: FiniteFloat
+
+
+class GeminiNarrative(BaseModel):
+    riskSummary: NarrativeText
+    valueAssessment: NarrativeText
+    weakeningDrivers: NarrativeText
+    contactStrategy: NarrativeText
+    recommendedActions: Annotated[list[ShortText], Field(min_length=1, max_length=8)]
+    caveats: Annotated[list[ShortText], Field(min_length=1, max_length=6)]
+
+
+class GeneratedReport(GeminiNarrative):
+    corporateId: CorporateId
+    customerName: CustomerName
+    asOfMonth: AsOfMonth
+    generatedAt: AwareDatetime
+    metrics: ReportMetrics
+    shapFactors: Annotated[list[ShapFactor], Field(min_length=1, max_length=10)]
+
+    @model_validator(mode="after")
+    def validate_shap_ranks(self):
+        ranks = [factor.rank for factor in self.shapFactors]
+        if ranks != list(range(1, len(ranks) + 1)):
+            raise ValueError("SHAP 순위는 1부터 중복 없이 연속해야 합니다.")
+        return self
 
 
 class Health(BaseModel):
