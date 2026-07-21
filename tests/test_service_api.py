@@ -47,6 +47,14 @@ def service_database(tmp_path):
         INSERT INTO shap_factors VALUES
           ('A', '2025-12', 'LightGBM_Isotonic', '요구불_TheilSen_추세', NULL, .30, 1),
           ('A', '2025-12', 'LightGBM_Isotonic', '채널_TheilSen_추세', NULL, -.20, 2),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_3', NULL, .18, 3),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_4', NULL, -.16, 4),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_5', NULL, .14, 5),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_6', NULL, -.12, 6),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_7', NULL, .10, 7),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_8', NULL, -.08, 8),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_9', NULL, .06, 9),
+          ('A', '2025-12', 'LightGBM_Isotonic', 'feature_10', NULL, -.04, 10),
           ('B', '2025-12', 'XGBoost', '최근3개월_채널', 70, .25, 1);
 
         INSERT INTO monthly_summaries VALUES
@@ -216,6 +224,10 @@ def test_report_returns_nullable_feature_values_and_all_stored_models(client):
         "impact": 0.3,
         "rank": 1,
     }
+    assert len(a_response.json()["shapFactors"]) == 10
+    assert [
+        factor["rank"] for factor in a_response.json()["shapFactors"]
+    ] == list(range(1, 11))
     assert b_response.status_code == 200
     assert b_response.json()["shapFactors"] == [
         {
