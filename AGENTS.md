@@ -2,147 +2,123 @@
 
 ## Project Topic
 
-기업금융 RM을 위한 **지속거래약화 예측, 고객가치 기반 CRM 우선순위, 세그먼트 기반 맞춤형 마케팅, AI 전략 보고서 생성 서비스**.
+기업금융 RM을 위한 **향후 6개월 지속거래약화 예측, FISIM CLV 기반 방어 우선순위, 세그먼트 맞춤 추천, 저장 SHAP 기반 전략 보고서 서비스**.
 
-## Primary Design Documents
+## Source-of-Truth Order
 
-- 중심 설계: `financial_dormancy.md`
-- 최종 Y 근거: `y_setting_pipeline.md`
-- 구현 명세: `docs/superpowers/specs/2026-07-13-persistent-transaction-weakening-y-design.md`
+현재 운영 정의가 충돌하면 아래 순서로 판단한다.
 
-활성 문서나 코드가 최종 Y 정의와 충돌하면 위 문서의 현재 정의를 우선한다.
+1. `src/models/web_202512_m12_final_model.ipynb`
+2. `src/수익성F(y선정포함).ipynb`
+3. `docs/superpowers/specs/2026-07-21-m12-model-clv-service-integration-design.md`
+4. `financial_dormancy.md`
+5. `src/models/model.md`
 
-## Product Questions
+`y_setting_pipeline.md`와 2026-07-13 이전 설계·코드는 과거 Y 탐색 이력이다.
 
-서비스는 기업금융 RM의 네 가지 질문에 답해야 한다.
-
-1. 어떤 법인고객을 먼저 관리해야 하는가?
-2. 거래관계가 지속적으로 약해지고 있는가?
-3. 고객가치까지 고려하면 관리 순서는 어떻게 달라지는가?
-4. 어떤 상품 또는 접촉 전략을 시도해야 하는가?
+## Service Flow
 
 ```text
-36개월 완전관측 법인 코호트
-→ Y_지속거래약화_3M70 이벤트 라벨
-→ rolling 조기예측 target 승인
-→ 지속거래약화 예측
-→ 고객가치 대리지표 결합
-→ CRM 관리 우선순위
-→ 세그먼트 기반 맞춤형 마케팅
-→ SHAP/차트 기반 AI 전략 보고서
+36개월 완전관측 3,372개 법인
+→ Y_INTERVENE_M12_v2 LightGBM·Isotonic 점수
+→ score_eligible=True 3,341개만 서비스 노출
+→ FISIM 기반 CLV_Risk·PotentialLoss
+→ 방어순위
+→ 세그먼트 기반 맞춤 추천
+→ 저장 SHAP 기반 AI 전략 보고서
 ```
 
 ## Final Y Contract
 
-최종 Y는 `Y_지속거래약화_3M70`이다. 실제 해지나 확정 휴면이 아니라 거래활동 시계열의 지속거래약화 proxy다.
+최종 운영 Y는 `Y_INTERVENE_M12_v2`다.
 
 ```text
-입출금활동금액 = 요구불입금금액 + 요구불출금금액
+D = 요구불입금금액 + 요구불출금금액
+A = 자동이체금액
+C = 창구 + 인터넷뱅킹 + 스마트뱅킹 + 폰뱅킹 + ATM 거래금액
+K = 신용카드사용금액 + 체크카드사용금액
 
-채널활동금액 = 창구거래금액
-                + 인터넷뱅킹거래금액
-                + 스마트뱅킹거래금액
-                + 폰뱅킹거래금액
-                + ATM거래금액
+ONSET_g   = c+1~c+3 각 월의 전년동월비 < 0.60
+PERSIST_g = mean(c+4:c+6) / mean(c-11:c) < 0.70
+W_g       = ONSET_g AND PERSIST_g
 
-카드활동금액 = 신용카드사용금액 + 체크카드사용금액
-
-핵심거래활동금액 = 입출금활동금액
-                    + 채널활동금액
-                    + 카드활동금액
-
-drop50(t) = 핵심거래활동금액(t) / 핵심거래활동금액(t-12) < 0.50
-
-Y_지속거래약화_3M70 = 1
-if
-drop50이 3개월 연속 발생
-AND
-이벤트 이후 3개월 평균 / 이벤트 이전 12개월 평균 < 0.70
+Y_INTERVENE_M12_v2 = W_D AND (W_A OR W_C OR W_K)
 ```
 
-### Event Rules
+- D가 판정 가능하고 A/C/K 중 하나 이상이 판정 가능할 때만 적격이다.
+- ONSET의 전년동월 분모 또는 PERSIST의 과거 12개월 평균이 0인 축은 판정 불가능이다.
+- 부적격을 Y=0으로 대체하지 않는다.
+- 롤링 lock: 전체 64,068행, 적격 63,572행, 양성 1,966행, 적격 법인 3,354개, 양성 법인 639개.
+- `Y_지속거래약화_3M70`은 과거 사후 first-event 라벨이며 배포 target이 아니다.
 
-- 3개월 연속 조건이 처음 완성된 세 번째 달이 이벤트월이다.
-- 같은 연속 구간의 네 번째 이후 달은 새 사건이 아니다.
-- 법인별 최초 3개월 연속 충족월만 사건으로 사용하며, 회복 후 재발은 추가 사건으로 세지 않는다.
-- 이벤트 이전 평균은 `t-12~t-1`, 이후 평균은 `t+1~t+3`이며 이벤트월은 제외한다.
-- YoY 분모가 0이거나 원천 금액이 결측이면 drop50을 판정하지 않는다.
-- `ratio=0.50`은 drop50이 아니고 `future3_to_baseline=0.70`은 Y=0이다.
-- 미래 3개월 부족 또는 지속성 분모 판정 불가능은 Y=0이 아니라 결측이다.
-- 사건 단위 키는 `법인ID+이벤트월`이다.
+## Final Model Contract
 
-분석 결과 최종 조건은 516개 법인, 전체 3,372개의 15.30%를 식별했다. 실제 원천 데이터 실행에서 이 수치를 재현 검증해야 한다.
+- Feature set: `FS2_R1_DACK_DYNAMIC`, 56개
+- Model: LightGBM
+- Calibration: grouped OOF Isotonic regression
+- Train: 43,499행
+- Test cutoff: 2025-06, 3,346행, 양성 119행
+- Operating cutoff: 2025-12
+- Input score artifact: `src/models/web_m12_intervene_v2_scores_202512_all_3372.csv`
+- Service population: `score_eligible=True`인 정확히 3,341개; 나머지 31개 완전 제외
 
-## Retired Target
+`risk_probability`는 향후 6개월 지속거래약화 target 발생 확률이며 실제 해지·부도·확정 휴면 확률이 아니다. 업종·세그먼트는 설명 및 안정성 감사용이지 모델 입력이 아니다.
 
-과거의 5개 핵심축 중 3축 이상 동시감소 방식은 최종 Y가 아니다. 해당 라벨과 그 모델 성능을 현재 결과로 표현하지 않는다.
-
-수신, 여신, 외환, 자동이체, 상품관계폭은 최종 Y 조건에서 제외한다. 기준월까지의 값은 향후 모델 feature와 설명축으로 검토할 수 있다.
-
-## Data Rules
-
-- 분석 기간은 2023-01~2025-12다.
-- 법인별 고객-월이 중복 없이 정확히 36개이며 연속인지 검증한다.
-- 결측 고객-월과 결측 원천 금액을 자동으로 0 처리하지 않는다.
-- 음수 거래금액은 원천 데이터 오류로 처리한다.
-- feature는 기준월 `t`까지의 정보만 사용한다.
-- 이벤트 이후 3개월 평균과 `future3_to_baseline`은 feature로 사용하지 않는다.
-- 업종·지역 등 정적 속성이 기간 중 변했는지 점검한다.
-- 초기 6개월 평균 대비 지수는 EDA 비교용이며 종합 금융활동 점수로 부르지 않는다.
-
-## Modeling Gate
-
-현재 확정된 것은 사후 이벤트 라벨이다. rolling 조기예측 target은 별도 승인 전까지 미정이다.
-
-- 기존 모델 실행을 중단한다.
-- 기존 성능을 새 Y의 성능으로 재사용하지 않는다.
-- 미래 사건창, cooldown, 학습 가능 기준월, embargo를 승인한 뒤 재학습한다.
-- 시간 기반 검증을 우선한다.
-- PR-AUC, Top-K 사건 recall, lift와 세그먼트 안정성을 확인한다.
-- 미래 정보 누수 검사를 자동화한다.
-
-## CRM Priority
+## FISIM and CLV
 
 ```text
-고객가치 대리지표
-= 정규화된 수신 + 여신 + 거래성금액 + 상품관계폭 + 고객등급 + 전담여부
+L  = 운전자금대출잔액 + 시설자금대출잔액
+DS = 거치식예금잔액 + 적립식예금잔액
+DR = 요구불예금잔액
 
-CRM 관리 우선순위 점수
-= 검증된 지속거래약화 위험 × 고객가치 대리지표
+V_FTP = L  × (기업대출금리 - FTP)
+      + DS × (FTP - 저축성수신금리)
+      + DR × (FTP - 0.0001)
 ```
 
-필수 필터는 업종, 지역, 전담여부, 약화유형, 세그먼트다. 관리 우선순위 점수는 실제 손실액이 아니라 RM 운영 순서를 정하기 위한 점수다.
+- 은행 금리는 월별 percentage이므로 `/100` 한 번만 적용한다.
+- FTP는 월별 decimal 그대로 사용한다.
+- 월말 잔액을 쓰며 월평잔·일수 연환산은 사용하지 않는다.
+- 음수 FISIM은 역마진 진단을 위해 보존한다.
+- 6개월 예측 잔액은 전년 동월, spread는 cutoff 월 값으로 고정한다.
 
-## Recommendations
+```text
+S(h) = (1-p)^(h/6)
+CLV_Risk = Σ(predicted_FISIM_h × S(h) / (1+p))
+PotentialLoss = CLV_NoRisk - CLV_Risk
+defense_value = max(PotentialLoss, 0)
+```
 
-초기 추천은 rule-based + segment-based baseline으로 둔다.
+양수 defense value만 `defense_rank`를 갖는다. 순위는 defense value, risk, `CLV_NoRisk` 내림차순 후 법인ID 오름차순이다.
 
-| 약화 원인 | 추천 방향 |
-| --- | --- |
-| 입출금 | 자금관리 상담, CMS, 결제성 거래 점검 |
-| 채널 | 디지털채널 온보딩, 이용 장애·불편 확인 |
-| 카드 | 법인카드 이용조건 점검, 한도·혜택 상담 |
-| 복합 거래활동 | RM 직접 접촉, 관계 회복 상담 |
+DB는 `CLV_NoRisk`도 저장하지만 UI의 고객가치 항목은 `CLV_Risk`, `PotentialLoss`만 표시한다. 과거 customer value proxy와 위험×대리점수 우선순위는 사용하지 않는다. `PotentialLoss`는 확정 회계손실이 아니다.
 
-## AI Report
+## Data and Service Rules
 
-LLM은 검증된 모델 출력과 SHAP·차트를 RM 언어로 설명한다. 상위 위험군, 선택 고객, 보고서 요청 건으로 호출을 제한한다. “지속거래약화 가능성”, “금융관계 약화 위험”, “조기관리 필요”, “추천 접촉 전략”을 사용한다.
+- 원천은 2023-01~2025-12, 121,392행, 3,372개 법인, 법인별 연속 36개월이어야 한다.
+- 고객-월 중복, 필수 잔액 결측·음수, 비정상 확률, 중복 법인ID는 실패 처리한다.
+- 서비스 준비 실패 시 기존 SQLite를 교체하지 않는다.
+- DB, API, KPI, filter options, UI의 모든 모집단은 적격 3,341개다.
+- feature는 기준월까지만 사용하고 target의 미래 관찰창을 누수시키지 않는다.
+- 웹 요청 중 모델·CLV·LLM을 실행하지 않고 사전 계산 결과만 조회한다.
 
-## Current Priority
+## UI and API Contract
 
-1. 실제 원천 데이터에서 새 이벤트 라벨 재현
-2. 월별·업종별·지역별 안정성과 이상치 민감도 검증
-3. rolling 조기예측 target 승인
-4. 새 모델 시간 검증
-5. 고객가치 기반 CRM 우선순위
-6. 추천·SHAP·AI 보고서 연결
+고객 응답 필드는 `clvRisk`, `potentialLoss`, nullable `defenseRank`다. Overview 합계는 `potentialLossTotal`이다. 기본 우선순위는 방어순위이며 null은 마지막이다.
+
+필터는 업종, 지역, 전담여부, 약화유형, 세그먼트를 유지한다. UI에는 아래 문구를 표시한다.
+
+> FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+
+AI 보고서는 “향후 6개월 지속거래약화 가능성”, “조기관리 필요”, “추천 접촉 전략”을 사용한다.
 
 ## Current Artifacts
 
 - Main design: `financial_dormancy.md`
-- Y evidence: `y_setting_pipeline.md`
-- Label implementation: `src/preprocessing/persistent_transaction_weakening_labels.py`
-- Label runner: `src/preprocessing/run_persistent_transaction_weakening_labels.py`
-- Modeling gate: `src/models/model.md`
-- Main EDA: `EDA/36개월 특성.ipynb`
-- Historical implementations: `legacy/`
+- Integration spec: `docs/superpowers/specs/2026-07-21-m12-model-clv-service-integration-design.md`
+- Final model notebook: `src/models/web_202512_m12_final_model.ipynb`
+- Final target/CLV notebook: `src/수익성F(y선정포함).ipynb`
+- Model notes: `src/models/model.md`
+- FISIM/CLV implementation: `src/backend/m12_clv.py`
+- Service preparation: `src/backend/prepare_service_database.py`
+- Historical Y evidence: `y_setting_pipeline.md`

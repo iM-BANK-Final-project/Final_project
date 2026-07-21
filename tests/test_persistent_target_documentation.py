@@ -12,12 +12,15 @@ ACTIVE_DOCS = [
 
 
 class PersistentTargetDocumentationTest(unittest.TestCase):
-    def test_active_docs_name_the_new_final_target(self):
+    def test_active_docs_name_the_final_operating_target(self):
         for path in ACTIVE_DOCS:
             text = path.read_text(encoding="utf-8")
-            self.assertIn("Y_지속거래약화_3M70", text, path)
+            self.assertIn("Y_INTERVENE_M12_v2", text, path)
+            self.assertIn("3,341", text, path)
+            self.assertIn("CLV_Risk", text, path)
+            self.assertIn("PotentialLoss", text, path)
 
-    def test_active_docs_do_not_present_old_target_as_current(self):
+    def test_active_docs_do_not_present_retired_contracts_as_current(self):
         for path in ACTIVE_DOCS:
             text = path.read_text(encoding="utf-8")
             self.assertNotIn(
@@ -25,6 +28,8 @@ class PersistentTargetDocumentationTest(unittest.TestCase):
                 text,
                 path,
             )
+            self.assertNotIn("CRM 관리 우선순위 점수\n=", text, path)
+            self.assertNotIn("고객가치 대리지표\n=", text, path)
 
     def test_active_docs_do_not_claim_stale_performance(self):
         for path in ACTIVE_DOCS:
