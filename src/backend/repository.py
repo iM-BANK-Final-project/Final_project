@@ -11,17 +11,14 @@ class DatabaseUnavailable(RuntimeError):
 
 
 CUSTOMER_SORT_COLUMNS = {
-    "priority_rank": "s.crm_priority_rank",
+    "defense_rank": "s.defense_rank",
     "risk": "s.risk_probability",
-    "value_proxy": "s.customer_value_proxy",
-    "priority_score": "s.crm_priority_score",
+    "clv_risk": "s.clv_risk",
+    "potential_loss": "s.potential_loss",
     "name": "COALESCE(c.corporate_name, c.corporate_id)",
 }
 
-PRIORITY_SORT_COLUMNS = {
-    **CUSTOMER_SORT_COLUMNS,
-    "crm_priority_rank": "s.crm_priority_rank",
-}
+PRIORITY_SORT_COLUMNS = dict(CUSTOMER_SORT_COLUMNS)
 
 FILTER_OPTION_COLUMNS = {
     "segments": "segment_name",
@@ -100,7 +97,7 @@ class ServiceRepository:
                 "managedCustomerCount": summary["managed_customer_count"],
                 "averageRisk": summary["average_risk"] * 100,
                 "highRiskShare": summary["high_risk_share"] * 100,
-                "priorityValueTotal": summary["priority_value_total"],
+                "potentialLossTotal": summary["potential_loss_total"],
                 "monthlyTrend": [
                     {
                         "month": row["as_of_month"],
@@ -215,12 +212,10 @@ class ServiceRepository:
             "riskLevel": row["risk_level"],
             "risk": risk,
             "health": 100 - risk,
-            "valueProxy": row["customer_value_proxy"],
-            "priorityScore": row["crm_priority_score"],
-            "priorityRank": row["crm_priority_rank"],
+            "clvRisk": row["clv_risk"],
+            "potentialLoss": row["potential_loss"],
+            "defenseRank": row["defense_rank"],
             "weakeningType": row["weakening_type"],
-            "profitability": row["profitability_value"],
-            "defenseValue": row["defense_value"],
             "signals": signals,
         }
 
@@ -229,7 +224,7 @@ class ServiceRepository:
         *,
         page: int = 1,
         page_size: int = 50,
-        sort_by: str = "priority_rank",
+        sort_by: str = "defense_rank",
         sort_order: str = "asc",
         as_of_month: str | None = None,
         **filters: Any,
@@ -249,7 +244,7 @@ class ServiceRepository:
         *,
         page: int = 1,
         page_size: int = 50,
-        sort_by: str = "crm_priority_rank",
+        sort_by: str = "defense_rank",
         sort_order: str = "asc",
         as_of_month: str | None = None,
         **filters: Any,
@@ -292,13 +287,23 @@ class ServiceRepository:
                 """,
                 query_parameters,
             ).fetchone()["count"]
+            sort_column = sort_columns[sort_by]
+            if sort_by == "defense_rank":
+                order_by = (
+                    f"(s.defense_rank IS NULL) ASC, "
+                    f"{sort_column} {sort_order.upper()}, s.corporate_id ASC"
+                )
+            else:
+                order_by = (
+                    f"{sort_column} {sort_order.upper()}, s.corporate_id ASC"
+                )
             rows = connection.execute(
                 f"""
                 SELECT s.*, COALESCE(c.corporate_name, c.corporate_id) AS display_name
                 FROM customer_snapshots s
                 JOIN customers c ON c.corporate_id = s.corporate_id
                 WHERE {where}
-                ORDER BY {sort_columns[sort_by]} {sort_order.upper()}, s.corporate_id ASC
+                ORDER BY {order_by}
                 LIMIT ? OFFSET ?
                 """,
                 (*query_parameters, page_size, (page - 1) * page_size),
@@ -367,7 +372,9 @@ class ServiceRepository:
                        COALESCE(c.corporate_name, c.corporate_id) AS display_name
                 {joins}
                 WHERE {where}
-                ORDER BY s.crm_priority_rank ASC, s.corporate_id ASC
+                ORDER BY (s.defense_rank IS NULL) ASC,
+                         s.defense_rank ASC,
+                         s.corporate_id ASC
                 LIMIT ? OFFSET ?
                 """,
                 (*query_parameters, page_size, (page - 1) * page_size),
@@ -430,10 +437,10 @@ class ServiceRepository:
                 """
                 SELECT feature_name, feature_value, shap_value, abs_shap_rank
                 FROM shap_factors
-                WHERE corporate_id = ? AND as_of_month = ? AND model_name = ?
-                ORDER BY abs_shap_rank ASC
+                WHERE corporate_id = ? AND as_of_month = ?
+                ORDER BY abs_shap_rank ASC, model_name ASC
                 """,
-                (corporate_id, month, "LightGBM"),
+                (corporate_id, month),
             ).fetchall()
             factors = [
                 {

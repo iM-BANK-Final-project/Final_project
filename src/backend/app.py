@@ -108,8 +108,8 @@ def create_app(repository: ServiceRepository | None = None) -> FastAPI:
         page: int = Query(1, ge=1),
         page_size: int = Query(50, ge=1, le=200),
         sort_by: Literal[
-            "priority_rank", "risk", "value_proxy", "priority_score", "name"
-        ] = "priority_rank",
+            "defense_rank", "risk", "clv_risk", "potential_loss", "name"
+        ] = "defense_rank",
         sort_order: Literal["asc", "desc"] = "asc",
     ):
         return repo(request).customers(
@@ -147,8 +147,8 @@ def create_app(repository: ServiceRepository | None = None) -> FastAPI:
         page: int = Query(1, ge=1),
         page_size: int = Query(50, ge=1, le=200),
         sort_by: Literal[
-            "crm_priority_rank", "risk", "value_proxy", "priority_score", "name"
-        ] = "crm_priority_rank",
+            "defense_rank", "risk", "clv_risk", "potential_loss", "name"
+        ] = "defense_rank",
         sort_order: Literal["asc", "desc"] = "asc",
     ):
         return repo(request).priorities(

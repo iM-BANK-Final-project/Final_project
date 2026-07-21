@@ -20,12 +20,10 @@ class Customer(BaseModel):
     riskLevel: str
     risk: float
     health: float
-    valueProxy: float
-    priorityScore: float
-    priorityRank: int
+    clvRisk: float
+    potentialLoss: float
+    defenseRank: int | None
     weakeningType: str
-    profitability: float | None
-    defenseValue: float | None
     signals: list[Signal] = Field(default_factory=list)
 
 
@@ -71,7 +69,7 @@ class Overview(BaseModel):
     managedCustomerCount: int
     averageRisk: float
     highRiskShare: float
-    priorityValueTotal: float
+    potentialLossTotal: float
     monthlyTrend: list[MonthlyTrend]
     signalSummary: list[SignalSummary]
 
@@ -88,7 +86,7 @@ class FilterOptions(BaseModel):
 
 class ShapFactor(BaseModel):
     feature: str
-    featureValue: float
+    featureValue: float | None
     impact: float
     rank: int
 
