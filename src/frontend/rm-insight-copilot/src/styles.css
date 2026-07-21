@@ -1190,6 +1190,14 @@ td:nth-child(9) {
   gap: 0.8rem;
 }
 
+.shap-section-title {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
 .bee-row {
   display: grid;
   grid-template-columns: minmax(9rem, 0.9fr) minmax(9rem, 1.4fr) 3.5rem;

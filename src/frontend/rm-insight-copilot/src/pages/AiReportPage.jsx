@@ -50,21 +50,30 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
           <EmptyState message="설명값 미산출" />
         )}
         {!reportState.loading && !reportState.error && shapFactors.length > 0 && (
-          <div className="beeswarm">
-            {shapFactors.map((factor) => {
-              const markerPosition = Math.min(Math.max(50 + factor.impact * 100, 8), 92);
+          <section className="shap-section" aria-labelledby="shap-section-title">
+            <small id="shap-section-title" className="shap-section-title">
+              주요 SHAP Value (상위 10개)
+            </small>
+            <div className="beeswarm">
+              {shapFactors.map((factor) => {
+                const markerPosition = Math.min(Math.max(50 + factor.impact * 100, 8), 92);
 
-              return (
-                <div className="bee-row" key={`${factor.rank}-${factor.feature}`}>
-                  <span>{factor.feature}</span>
-                  <div>
-                    <i style={{ left: `${markerPosition}%` }} />
+                return (
+                  <div
+                    className="bee-row"
+                    data-testid="shap-factor"
+                    key={`${factor.rank}-${factor.feature}`}
+                  >
+                    <span>{factor.feature}</span>
+                    <div>
+                      <i style={{ left: `${markerPosition}%` }} />
+                    </div>
+                    <strong>{impactFormatter.format(factor.impact)}</strong>
                   </div>
-                  <strong>{impactFormatter.format(factor.impact)}</strong>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </section>
         )}
       </section>
       <section className="panel report-card">
