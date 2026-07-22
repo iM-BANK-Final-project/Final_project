@@ -202,7 +202,7 @@ def test_generate_strategy_report_adds_canonical_limitations_once():
     )
     assert (
         result.caveats.count(
-            "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다."
+            "CLV_Risk와 PotentialLoss는 최근 6개월 실제 FISIM 기반 위험조정 시나리오 추정치이며 확정 손실액이 아닙니다."
         )
         == 1
     )
@@ -487,7 +487,7 @@ def test_generate_strategy_report_replaces_overlapping_caveats_with_canonical_se
     payload["caveats"] = [
         "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다.",
         "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다.",
-        "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
+        "CLV_Risk와 PotentialLoss는 최근 6개월 실제 FISIM 기반 위험조정 시나리오 추정치이며 확정 손실액이 아닙니다.",
         "RM 검토가 필요합니다.",
         "접촉 전 최신 거래를 확인하세요.",
         "정량 근거를 함께 검토하세요.",
@@ -504,6 +504,6 @@ def test_generate_strategy_report_replaces_overlapping_caveats_with_canonical_se
     assert result.caveats[-3:] == [
         "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다.",
         "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다.",
-        "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
+        "CLV_Risk와 PotentialLoss는 최근 6개월 실제 FISIM 기반 위험조정 시나리오 추정치이며 확정 손실액이 아닙니다.",
     ]
     assert result.valueAssessment == "확정 손실이 아닌 시나리오입니다."

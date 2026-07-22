@@ -97,21 +97,16 @@ Unit rules:
 - Negative monthly FISIM values are preserved for reverse-margin diagnosis.
 - D/A/C/K activity, relationship features, segments, and industry are not direct FISIM inputs.
 
-## 6. Six-Month CLV and Defense Priority
+## 6. Actual Six-Month FISIM CLV and Defense Priority
 
-For cutoff `c = 2025-12`, forecast months `c+1` through `c+6` use the corresponding prior-year month-end balances. The loan, saving-deposit, demand-deposit, and FTP spreads are fixed at their cutoff-month values.
+For cutoff `c = 2025-12`, the value basis is the six actual monthly FISIM observations from `2025-07` through `2025-12`. The existing 2025-12 operating `risk_probability` is preserved. Future balances, 2026 profitability, and survival weighting are not forecast.
 
-For risk probability `p` and horizon month `h`:
+For risk probability `p`:
 
 ```text
-S(h) = (1 - p)^(h/6)
+CLV_NoRisk = sum(actual_FISIM_m for m=2025-07..2025-12)
 
-CLV_NoRisk = sum(predicted_FISIM_h for h=1..6)
-
-CLV_Risk = sum(
-  predicted_FISIM_h × S(h) / (1 + p)
-  for h=1..6
-)
+CLV_Risk = CLV_NoRisk / (1 + p)
 
 PotentialLoss = CLV_NoRisk - CLV_Risk
 defense_value = max(PotentialLoss, 0)
@@ -124,7 +119,7 @@ defense_value = max(PotentialLoss, 0)
 3. `CLV_NoRisk` descending
 4. `corporate_id` ascending
 
-The service stores `CLV_NoRisk` for audit and reproducibility but does not display it. The UI displays only `CLV_Risk` and `PotentialLoss` as customer-value fields. `PotentialLoss` is a six-month FISIM-based potential CLV exposure, not confirmed accounting loss.
+The service stores `CLV_NoRisk` for audit and reproducibility but does not display it. The UI displays only `CLV_Risk` and `PotentialLoss` as customer-value fields. `PotentialLoss` is a trailing actual six-month FISIM risk-adjustment exposure, not forecast profitability or confirmed accounting loss.
 
 The retired `customer_value_proxy`, `risk_probability × customer_value_proxy`, and the old meaning of `crm_priority_score` are removed from the active database, API, UI, and documentation.
 
@@ -189,7 +184,7 @@ The page does not display `CLV_NoRisk`, a customer-value proxy, generic profitab
 
 The UI includes this interpretation note near CLV and potential-loss values:
 
-> FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+> 최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
 
 Existing in-progress AI report robustness changes are preserved. Reports use the final score artifact's SHAP factors and refer to `향후 6개월 지속거래약화 가능성`, `조기관리 필요`, and `추천 접촉 전략` without describing the score as churn, closure, or default risk.
 

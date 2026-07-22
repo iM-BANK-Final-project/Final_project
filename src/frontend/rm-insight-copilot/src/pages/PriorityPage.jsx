@@ -135,7 +135,7 @@ export default function PriorityPage({ onRecommendationOpen }) {
         </table>
       </div>
       <small className="report-note">
-        FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+        최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
       </small>
     </main>
   );

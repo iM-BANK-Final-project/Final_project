@@ -181,7 +181,7 @@ def build_operating_clv(
     scores: pd.DataFrame,
     cutoff: str = "2025-12",
 ) -> pd.DataFrame:
-    """Build final six-month CLV and deterministic defense priority."""
+    """Build risk-adjusted CLV from the trailing six actual FISIM months."""
     _require_columns(scores, ["법인ID", "risk_probability"], "운영 점수")
     score_work = scores.loc[:, ["법인ID", "risk_probability"]].copy()
     if score_work["법인ID"].isna().any():
@@ -199,76 +199,45 @@ def build_operating_clv(
         raise ValueError("risk_probability는 0과 1 사이의 숫자여야 합니다.")
 
     cutoff_period = pd.Period(cutoff, freq="M")
-    _require_columns(rates, ["월", *RATE_COLUMNS], "CLV 금리")
-    cutoff_rates = rates.loc[rates["월"].eq(cutoff_period), RATE_COLUMNS]
-    if len(cutoff_rates) != 1 or cutoff_rates.isna().any().any():
-        raise ValueError(f"기준월 {cutoff}의 CLV 금리는 정확히 한 행이어야 합니다.")
-    rate_row = cutoff_rates.iloc[0]
+    profitability_months = pd.period_range(cutoff_period - 5, cutoff_period, freq="M")
+    monthly_fisim = build_monthly_fisim(source, rates)
+    monthly = monthly_fisim.loc[
+        monthly_fisim["법인ID"].isin(score_work["법인ID"])
+        & monthly_fisim["월"].isin(profitability_months),
+        ["법인ID", "월", "FISIM_CONTRIB_M"],
+    ].copy()
+    month_counts = monthly.groupby("법인ID")["월"].nunique()
+    if (
+        len(monthly) != len(score_work) * 6
+        or len(month_counts) != len(score_work)
+        or not month_counts.eq(6).all()
+    ):
+        raise ValueError("각 운영 법인은 최근 실제 FISIM 6개월을 모두 가져야 합니다.")
 
-    required_source = ["법인ID", "기준년월", *BALANCE_COLUMNS]
-    _require_columns(source, required_source, "CLV 원천")
-    source_work = source.loc[:, required_source].copy()
-    if source_work["법인ID"].isna().any():
-        raise ValueError("CLV 원천 법인ID에 결측이 있습니다.")
-    source_work["법인ID"] = source_work["법인ID"].astype("string")
-    try:
-        source_work["월"] = pd.PeriodIndex(
-            source_work["기준년월"].astype(str), freq="M"
-        )
-    except ValueError as error:
-        raise ValueError("CLV 원천 기준년월 형식을 해석할 수 없습니다.") from error
-    if source_work.duplicated(["법인ID", "월"]).any():
-        raise ValueError("CLV 원천에 법인ID+월 중복이 있습니다.")
-    _numeric_nonnegative(source_work, BALANCE_COLUMNS, "CLV 잔액")
-    source_work["대출잔액_L"] = source_work[BALANCE_COLUMNS[:2]].sum(axis=1)
-    source_work["저축성수신잔액_DS"] = source_work[BALANCE_COLUMNS[2:4]].sum(axis=1)
-    source_work["요구불잔액_DR"] = source_work["요구불예금잔액"]
-
-    forecast_parts: list[pd.DataFrame] = []
-    for horizon in range(1, 7):
-        forecast_month = cutoff_period + horizon
-        reference_month = forecast_month - 12
-        balances = source_work.loc[
-            source_work["월"].eq(reference_month)
-            & source_work["법인ID"].isin(score_work["법인ID"]),
-            ["법인ID", "대출잔액_L", "저축성수신잔액_DS", "요구불잔액_DR"],
-        ].copy()
-        if len(balances) != len(score_work) or not balances["법인ID"].is_unique:
-            raise ValueError("각 운영 법인은 CLV 잔액 참조월 6개월을 모두 가져야 합니다.")
-        balances["예측개월차_h"] = horizon
-        balances["예측_FISIM_M"] = (
-            balances["대출잔액_L"] * rate_row["대출스프레드_월"]
-            + balances["저축성수신잔액_DS"] * rate_row["저축성수신스프레드_월"]
-            + balances["요구불잔액_DR"] * rate_row["요구불스프레드_월"]
-        )
-        forecast_parts.append(balances)
-
-    monthly = pd.concat(forecast_parts, ignore_index=True).merge(
+    monthly = monthly.merge(
         score_work,
         on="법인ID",
         how="inner",
         validate="many_to_one",
     )
-    monthly["S_사건미발생확률"] = np.power(
-        1 - monthly["risk_probability"], monthly["예측개월차_h"] / 6.0
-    )
-    monthly["CLV_NoRisk_월기여"] = monthly["예측_FISIM_M"]
-    monthly["CLV_Risk_월기여"] = (
-        monthly["예측_FISIM_M"] * monthly["S_사건미발생확률"]
-        / (1 + monthly["risk_probability"])
-    )
     customer = (
         monthly.groupby("법인ID", as_index=False)
         .agg(
-            CLV_NoRisk=("CLV_NoRisk_월기여", "sum"),
-            CLV_Risk=("CLV_Risk_월기여", "sum"),
-            예측월수=("예측개월차_h", "size"),
+            CLV_NoRisk=("FISIM_CONTRIB_M", "sum"),
+            수익성월수=("월", "size"),
         )
         .merge(score_work, on="법인ID", how="left", validate="one_to_one")
     )
-    if not customer["예측월수"].eq(6).all():
-        raise ValueError("각 운영 법인의 CLV 예측은 정확히 6개월이어야 합니다.")
+    if not customer["수익성월수"].eq(6).all():
+        raise ValueError("각 운영 법인의 실제 FISIM 수익성은 정확히 6개월이어야 합니다.")
     customer["기준월"] = str(cutoff_period)
+    customer["수익성기간"] = (
+        f"{profitability_months.min()}~{profitability_months.max()}"
+    )
+    customer["미래수익성예측사용"] = False
+    customer["CLV_Risk"] = customer["CLV_NoRisk"] / (
+        1 + customer["risk_probability"]
+    )
     customer["PotentialLoss"] = customer["CLV_NoRisk"] - customer["CLV_Risk"]
     customer["defense_value"] = customer["PotentialLoss"].clip(lower=0)
     if not np.isfinite(
@@ -294,7 +263,9 @@ def build_operating_clv(
             "PotentialLoss",
             "defense_value",
             "defense_rank",
-            "예측월수",
+            "수익성월수",
+            "수익성기간",
+            "미래수익성예측사용",
         ]
     ].sort_values(
         ["defense_rank", "법인ID"], na_position="last", kind="mergesort"

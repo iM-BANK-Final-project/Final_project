@@ -74,7 +74,11 @@ describe("PriorityPage", () => {
     expect(screen.getByText("방어순위")).toBeInTheDocument();
     expect(screen.getByText("70.25")).toBeInTheDocument();
     expect(screen.getByText("30.5")).toBeInTheDocument();
-    expect(screen.getByText(/확정 회계손실이 아닙니다/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다."
+      )
+    ).toBeInTheDocument();
     expect(screen.queryByText("고객가치 대리지표")).not.toBeInTheDocument();
     expect(screen.queryByText("CRM 우선순위 점수")).not.toBeInTheDocument();
     expect(screen.queryByText("수익성")).not.toBeInTheDocument();

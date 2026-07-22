@@ -109,10 +109,10 @@ def test_monthly_fisim_rejects_missing_or_negative_balances(invalid):
         build_monthly_fisim(source, rates)
 
 
-def _forecast_source() -> pd.DataFrame:
+def _actual_profitability_source() -> pd.DataFrame:
     rows = []
     for corporate_id, loan in [("A", 100.0), ("B", 100.0), ("NEG", 0.0), ("ZERO", 200.0)]:
-        for month in range(202501, 202507):
+        for month in range(202507, 202513):
             rows.append(
                 _source_row(
                     corporate_id=corporate_id,
@@ -127,13 +127,13 @@ def _forecast_source() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _cutoff_rates() -> pd.DataFrame:
+def _profitability_rates() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "월": [pd.Period("2025-12", freq="M")],
-            "대출스프레드_월": [0.01],
-            "저축성수신스프레드_월": [-0.01],
-            "요구불스프레드_월": [0.002],
+            "월": pd.period_range("2025-07", "2025-12", freq="M"),
+            "대출스프레드_월": [0.01] * 6,
+            "저축성수신스프레드_월": [-0.01] * 6,
+            "요구불스프레드_월": [0.002] * 6,
         }
     )
 
@@ -147,23 +147,30 @@ def _scores() -> pd.DataFrame:
     )
 
 
-def test_operating_clv_matches_six_month_survival_formula_and_rank_order():
+def test_operating_clv_uses_trailing_actual_fisim_without_survival_weighting():
     result = build_operating_clv(
-        _forecast_source(), _cutoff_rates(), _scores(), cutoff="2025-12"
+        _actual_profitability_source(),
+        _profitability_rates(),
+        _scores(),
+        cutoff="2025-12",
     ).set_index("법인ID")
 
-    survival = np.power(1 - 0.5, np.arange(1, 7) / 6.0)
-    expected_clv_risk = np.sum(survival / 1.5)
     assert result.loc["A", "CLV_NoRisk"] == pytest.approx(6.0)
-    assert result.loc["A", "CLV_Risk"] == pytest.approx(expected_clv_risk)
-    assert result.loc["A", "PotentialLoss"] == pytest.approx(6.0 - expected_clv_risk)
+    assert result.loc["A", "CLV_Risk"] == pytest.approx(6.0 / 1.5)
+    assert result.loc["A", "PotentialLoss"] == pytest.approx(2.0)
+    assert result.loc["A", "수익성월수"] == 6
+    assert result.loc["A", "수익성기간"] == "2025-07~2025-12"
+    assert not result.loc["A", "미래수익성예측사용"]
     assert result.loc["A", "defense_rank"] == 1
     assert result.loc["B", "defense_rank"] == 2
 
 
 def test_operating_clv_preserves_negative_value_and_leaves_nondefense_rank_null():
     result = build_operating_clv(
-        _forecast_source(), _cutoff_rates(), _scores(), cutoff="2025-12"
+        _actual_profitability_source(),
+        _profitability_rates(),
+        _scores(),
+        cutoff="2025-12",
     ).set_index("법인ID")
 
     assert result.loc["NEG", "CLV_NoRisk"] == pytest.approx(-6.0)
@@ -175,14 +182,16 @@ def test_operating_clv_preserves_negative_value_and_leaves_nondefense_rank_null(
 
 
 def test_operating_clv_requires_exactly_six_reference_months_per_firm():
-    incomplete = _forecast_source().loc[
+    incomplete = _actual_profitability_source().loc[
         lambda frame: ~(
-            frame["법인ID"].eq("A") & frame["기준년월"].eq(202506)
+            frame["법인ID"].eq("A") & frame["기준년월"].eq(202512)
         )
     ]
 
     with pytest.raises(ValueError, match="6개월"):
-        build_operating_clv(incomplete, _cutoff_rates(), _scores(), cutoff="2025-12")
+        build_operating_clv(
+            incomplete, _profitability_rates(), _scores(), cutoff="2025-12"
+        )
 
 
 def test_operating_clv_rejects_probability_outside_unit_interval():
@@ -190,4 +199,4 @@ def test_operating_clv_rejects_probability_outside_unit_interval():
     scores.loc[scores["법인ID"].eq("A"), "risk_probability"] = 1.1
 
     with pytest.raises(ValueError, match="0과 1"):
-        build_operating_clv(_forecast_source(), _cutoff_rates(), scores)
+        build_operating_clv(_actual_profitability_source(), _profitability_rates(), scores)

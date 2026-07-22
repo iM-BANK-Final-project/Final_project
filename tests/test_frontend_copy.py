@@ -18,6 +18,8 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("지속거래약화 위험", active_text)
         self.assertIn("CLV_Risk", active_text)
         self.assertIn("PotentialLoss", active_text)
+        self.assertIn("최근 6개월 실제 FISIM을 위험확률로 조정한", active_text)
+        self.assertNotIn("FISIM 기반 향후 6개월 경제적 기여가치", active_text)
         self.assertIn("잠재손실 방어대상 합계", active_text)
         self.assertNotIn("고객가치 대리지표", active_text)
         self.assertNotIn("CRM 우선순위 점수", active_text)

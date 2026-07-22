@@ -18,7 +18,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 CANONICAL_CAVEATS = (
     "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다.",
     "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다.",
-    "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.",
+    "CLV_Risk와 PotentialLoss는 최근 6개월 실제 FISIM 기반 위험조정 시나리오 추정치이며 확정 손실액이 아닙니다.",
 )
 EVENT_PROBABILITY_TERMS = re.compile(r"(?:실제\s*)?(?:해지|부도|휴면)\s*확률")
 DIRECT_EVENT_NEGATION = re.compile(
@@ -151,7 +151,8 @@ def build_strategy_report_prompt(context: dict) -> str:
 [필수 규칙]
 - risk는 향후 6개월 Y_INTERVENE_M12_v2 지속거래약화 발생 가능성입니다.
 - risk를 실제 해지, 부도, 확정 휴면 확률로 표현하지 마세요.
-- CLV_Risk와 PotentialLoss는 시나리오 추정치이며 확정 손실액이 아닙니다.
+- CLV_NoRisk는 기준월 포함 최근 실제 6개월 FISIM 합계이고, CLV_Risk는 이를 `1+risk`로 나눈 위험조정 값입니다.
+- PotentialLoss는 CLV_NoRisk와 CLV_Risk의 차이이며 미래 수익성 예측값이나 확정 손실액이 아닙니다.
 - CLV_Risk와 PotentialLoss 금액을 문장에 인용할 때는 금액 숫자 바로 뒤에 `백만원`을 표시하세요.
 - 모든 원시 Top 10 항목을 권위 있는 입력 근거로 검토하세요. 같은 그룹의 유사 피처는 종합 신호로 결합하고 각 피처를 개별적으로 모두 언급할 필요는 없습니다.
 - 같은 그룹의 유사 피처는 하나의 종합 신호로 묶어 반복적인 문장을 피하세요.

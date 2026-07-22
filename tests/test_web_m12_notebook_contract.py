@@ -61,8 +61,19 @@ def test_profitability_notebook_accepts_repository_ftp_schema():
     assert "FTP 필수 컬럼을 찾을 수 없습니다." in source
 
 
-def test_profitability_notebook_validates_annualized_corporate_loan_rate_range():
+def test_profitability_notebook_validates_monthly_corporate_loan_rate_range():
     source = code_from(PROFITABILITY_NOTEBOOK)
 
-    assert "['기업대출금리_월_decimal'].between(0.02, 0.10)" in source
-    assert "['기업대출금리_월_decimal'].between(0.002, 0.01)" not in source
+    assert "['기업대출금리_월_decimal'].between(0.002, 0.01)" in source
+    assert "['기업대출금리_월_decimal'].between(0.02, 0.10)" not in source
+
+
+def test_profitability_notebook_uses_operating_scores_and_actual_six_month_clv():
+    source = code_from(PROFITABILITY_NOTEBOOK)
+
+    assert "assert len(OPERATING_SCORES) == 3341" in source
+    assert "'2025-07~2025-12'" in source
+    assert "actual_trailing_6m_FISIM/(1+risk_probability)" in source
+    assert "'future_profitability_forecast_used': False" in source
+    assert "'survival_formula_used': False" in source
+    assert "S_사건미발생확률" not in source

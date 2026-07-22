@@ -71,12 +71,11 @@ V_FTP(i,m) = L  × (기업대출금리_m - FTP_m)
 
 ## 5. CLV와 방어순위
 
-2025-12 기준 향후 6개월은 전년 동월 월말 잔액을 사용하고, 대출·저축성수신·요구불·FTP spread는 기준월 값으로 고정한다.
+2025-12 기준 가치 기초는 최근 실제 6개월인 2025-07~2025-12 월별 FISIM 합계다. 미래 잔액·2026년 수익성과 생존확률은 예측하지 않는다.
 
 ```text
-S(h) = (1 - p)^(h/6)
-CLV_NoRisk = Σ predicted_FISIM_h
-CLV_Risk = Σ(predicted_FISIM_h × S(h) / (1+p))
+CLV_NoRisk = Σ actual_FISIM_m, m=2025-07..2025-12
+CLV_Risk = CLV_NoRisk / (1+p)
 PotentialLoss = CLV_NoRisk - CLV_Risk
 defense_value = max(PotentialLoss, 0)
 ```
@@ -92,7 +91,7 @@ DB에는 `CLV_NoRisk`, `CLV_Risk`, `PotentialLoss`, `defense_value`, nullable `d
 ```text
 최종 점수 CSV
 → score_eligible=True 3,341개 검증
-→ 월별 FISIM 및 6개월 CLV 계산
+→ 월별 FISIM 및 최근 실제 6개월 위험조정 CLV 계산
 → 고객·위험·CLV·신호·세그먼트·SHAP·추천 테이블 생성
 → 임시 SQLite 검증 후 원자적 교체
 → FastAPI 조회
@@ -103,7 +102,7 @@ API 고객 응답은 `clvRisk`, `potentialLoss`, `defenseRank`를 제공한다. 
 
 필터는 업종, 지역, 전담여부, 약화유형, 세그먼트를 유지한다. UI에는 다음 해석 문구를 표시한다.
 
-> FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+> 최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
 
 ### Gemini AI 보고서·PDF
 

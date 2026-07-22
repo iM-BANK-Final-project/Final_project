@@ -120,7 +120,9 @@ def _clv_frame() -> pd.DataFrame:
             "PotentialLoss": [30.0],
             "defense_value": [30.0],
             "defense_rank": pd.Series([1], dtype="Int64"),
-            "예측월수": [6],
+            "수익성월수": [6],
+            "수익성기간": ["2025-07~2025-12"],
+            "미래수익성예측사용": [False],
         }
     )
 

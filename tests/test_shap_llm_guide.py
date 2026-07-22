@@ -30,7 +30,7 @@ def test_shap_llm_guide_states_operational_limits_and_raw_top10_contract():
     assert "저장된 원본 행을 모두 표시하며 운영 적격 고객은 통상 10개" in text
     assert "Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다." in text
     assert "SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다." in text
-    assert "CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다." in text
+    assert "CLV_Risk와 PotentialLoss는 최근 6개월 실제 FISIM 기반 위험조정 시나리오 추정치" in text
     assert "정량 %, %p, bp 또는 숫자-만큼" in text
     assert "일반적인 인과 표현은 프롬프트에서 금지하지만 후처리가 빠짐없이 탐지하지는 않는다" in text
     assert "특정 피처의 방향과 반대되는" in text

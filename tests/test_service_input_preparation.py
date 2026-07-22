@@ -97,13 +97,13 @@ def test_filter_eligible_operating_scores_enforces_count_and_unique_ids():
         filter_eligible_operating_scores(duplicated, expected_count=2)
 
 
-def test_build_final_clv_reproduces_cutoff_spread_and_six_month_formula():
+def test_build_final_clv_reproduces_actual_six_month_fisim_formula():
     scores = pd.DataFrame(
         {
             "법인ID": ["A"],
             "cutoff_month": [202512],
             "score_eligible": [True],
-            "risk_probability": [0.0],
+            "risk_probability": [0.5],
         }
     )
 
@@ -116,10 +116,15 @@ def test_build_final_clv_reproduces_cutoff_spread_and_six_month_formula():
     )
 
     assert result.loc[0, "기준월"] == "2025-12"
-    assert result.loc[0, "예측월수"] == 6
+    assert result.loc[0, "수익성월수"] == 6
+    assert result.loc[0, "수익성기간"] == "2025-07~2025-12"
     assert result.loc[0, "CLV_NoRisk"] == pytest.approx(100.0 * 0.038 * 6)
-    assert result.loc[0, "CLV_Risk"] == pytest.approx(result.loc[0, "CLV_NoRisk"])
-    assert result.loc[0, "PotentialLoss"] == pytest.approx(0)
+    assert result.loc[0, "CLV_Risk"] == pytest.approx(
+        result.loc[0, "CLV_NoRisk"] / 1.5
+    )
+    assert result.loc[0, "PotentialLoss"] == pytest.approx(
+        result.loc[0, "CLV_NoRisk"] - result.loc[0, "CLV_Risk"]
+    )
 
 
 def test_build_final_clv_keeps_source_and_eligible_population_locks_separate():

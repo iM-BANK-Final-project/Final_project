@@ -81,11 +81,12 @@ V_FTP = L  × (기업대출금리 - FTP)
 - FTP는 월별 decimal 그대로 사용한다.
 - 월말 잔액을 쓰며 월평잔·일수 연환산은 사용하지 않는다.
 - 음수 FISIM은 역마진 진단을 위해 보존한다.
-- 6개월 예측 잔액은 전년 동월, spread는 cutoff 월 값으로 고정한다.
+- CLV 가치 기초는 기준월 포함 최근 실제 6개월 월별 FISIM 합계다. 2025-12 운영에서는 2025-07~12를 사용한다.
+- 미래 잔액·2026년 수익성과 생존확률은 예측하지 않는다.
 
 ```text
-S(h) = (1-p)^(h/6)
-CLV_Risk = Σ(predicted_FISIM_h × S(h) / (1+p))
+CLV_NoRisk = Σ actual_FISIM_m, m=c-5..c
+CLV_Risk = CLV_NoRisk / (1+p)
 PotentialLoss = CLV_NoRisk - CLV_Risk
 defense_value = max(PotentialLoss, 0)
 ```
@@ -109,7 +110,7 @@ DB는 `CLV_NoRisk`도 저장하지만 UI의 고객가치 항목은 `CLV_Risk`, `
 
 필터는 업종, 지역, 전담여부, 약화유형, 세그먼트를 유지한다. UI에는 아래 문구를 표시한다.
 
-> FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+> 최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
 
 AI 보고서는 “향후 6개월 지속거래약화 가능성”, “조기관리 필요”, “추천 접촉 전략”을 사용한다.
 

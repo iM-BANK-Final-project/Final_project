@@ -284,7 +284,8 @@ def render_strategy_report_pdf(
                 _paragraph(
                     "본 보고서의 위험확률은 향후 6개월 Y_INTERVENE_M12_v2 "
                     "지속거래약화 발생 가능성입니다. 실제 해지·부도·확정 휴면 "
-                    "확률이 아니며, CLV_Risk와 PotentialLoss는 확정 회계손실이 아닙니다. "
+                    "확률이 아니며, CLV_Risk와 PotentialLoss는 최근 6개월 실제 "
+                    "FISIM 기반 위험조정 추정치로 확정 회계손실이 아닙니다. "
                     "SHAP은 인과관계가 아닌 모델 예측 기여도입니다.",
                     styles["small"],
                 ),

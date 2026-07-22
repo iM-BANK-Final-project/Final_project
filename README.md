@@ -51,16 +51,16 @@ V_FTP = 대출잔액 × (기업대출금리 - FTP)
       + 요구불잔액 × (FTP - 0.0001)
 ```
 
-은행 금리는 `% / 100`, FTP는 이미 decimal이므로 재변환하지 않습니다. 월평잔과 일수 연환산은 사용하지 않습니다. 6개월 예측에는 전년 동월 월말 잔액과 2025-12의 고정 spread를 사용합니다.
+은행 금리는 `% / 100`, FTP는 이미 decimal이므로 재변환하지 않습니다. 월평잔과 일수 연환산은 사용하지 않습니다. CLV의 가치 기초는 2025-12 기준 최근 실제 6개월(2025-07~12) 월별 FISIM 합계입니다.
 
 ```text
-S(h) = (1 - p)^(h/6)
-CLV_Risk = Σ(predicted_FISIM_h × S(h) / (1+p))
+CLV_NoRisk = Σ(actual_FISIM_m), m=2025-07..2025-12
+CLV_Risk = CLV_NoRisk / (1+p)
 PotentialLoss = CLV_NoRisk - CLV_Risk
 defense_value = max(PotentialLoss, 0)
 ```
 
-화면에는 `CLV_Risk`, `PotentialLoss`, `방어순위`만 표시합니다. `CLV_NoRisk`는 감사·재현을 위해 DB에만 저장합니다. `PotentialLoss`는 향후 6개월 FISIM 기반 경제적 기여가치 차이이며 확정 회계손실이 아닙니다.
+화면에는 `CLV_Risk`, `PotentialLoss`, `방어순위`만 표시합니다. `CLV_NoRisk`는 감사·재현을 위해 DB에만 저장합니다. `PotentialLoss`는 최근 6개월 실제 FISIM 기반 위험조정 경제적 기여가치 차이이며 확정 회계손실이 아닙니다.
 
 ## Run the Service
 

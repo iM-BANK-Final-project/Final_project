@@ -71,7 +71,9 @@ CLV_COLUMNS = (
     "PotentialLoss",
     "defense_value",
     "defense_rank",
-    "예측월수",
+    "수익성월수",
+    "수익성기간",
+    "미래수익성예측사용",
 )
 
 
@@ -148,6 +150,9 @@ def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
         scores["score_eligible"], "score_eligible"
     )
     clv["기준월"] = normalize_month(clv["기준월"])
+    clv["미래수익성예측사용"] = _normalize_boolean(
+        clv["미래수익성예측사용"], "미래수익성예측사용"
+    )
     return ServiceInputs(source, scores, clv)
 
 
@@ -470,7 +475,7 @@ def build_service_tables(
             "CLV_Risk",
             "PotentialLoss",
             "defense_value",
-            "예측월수",
+            "수익성월수",
         ),
         "CLV",
     )
@@ -521,8 +526,15 @@ def build_service_tables(
         atol=1e-12,
     ):
         raise ValueError("운영 점수와 CLV의 위험확률 불일치가 있습니다.")
-    if not joined["예측월수"].eq(6).all():
-        raise ValueError("CLV 예측월수는 정확히 6개월이어야 합니다.")
+    if not joined["수익성월수"].eq(6).all():
+        raise ValueError("CLV 실제 수익성월수는 정확히 6개월이어야 합니다.")
+    expected_period = (
+        pd.Period(month, freq="M") - 5
+    ).strftime("%Y-%m") + f"~{month}"
+    if not joined["수익성기간"].eq(expected_period).all():
+        raise ValueError(f"CLV 수익성기간은 {expected_period}여야 합니다.")
+    if joined["미래수익성예측사용"].any():
+        raise ValueError("CLV는 미래 수익성 예측값을 사용할 수 없습니다.")
     if not joined["법인_고객등급"].isin(VALID_GRADES).all():
         raise ValueError("고객등급 허용값 위반이 있습니다.")
     if not joined["전담고객여부"].isin(VALID_DEDICATED).all():

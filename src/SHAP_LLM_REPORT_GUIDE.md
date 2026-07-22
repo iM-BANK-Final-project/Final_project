@@ -225,7 +225,7 @@ bounded behavior이며 자유로운 모든 문장 의미를 판별하는 범용 
 
 1. `Y는 실제 해지·부도·확정 휴면이 아닌 지속거래약화 proxy 예측입니다.`
 2. `SHAP은 인과관계나 확률 변화량이 아닌 모델 예측 기여도입니다.`
-3. `CLV_Risk와 PotentialLoss는 확정 손실액이 아닌 시나리오 추정치입니다.`
+3. `CLV_Risk와 PotentialLoss는 최근 6개월 실제 FISIM 기반 위험조정 시나리오 추정치이며 확정 손실액이 아닙니다.`
 
 ## 8. API·화면·PDF 계약
 
