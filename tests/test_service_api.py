@@ -249,6 +249,13 @@ def test_recommendations_support_filters_and_defense_order(client):
     assert [item["id"] for item in response.json()["items"]] == ["C"]
 
 
+def test_recommendations_support_risk_level_filter(client):
+    response = client.get("/api/recommendations", params={"risk_level": "MEDIUM"})
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == ["C"]
+
+
 def test_report_returns_nullable_feature_values_and_all_stored_models(client):
     a_response = client.get("/api/reports/A")
     b_response = client.get("/api/reports/B")

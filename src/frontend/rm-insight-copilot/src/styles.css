@@ -880,6 +880,10 @@ button,
   letter-spacing: -0.04em;
 }
 
+.overview-content .section-header h2 {
+  font-weight: var(--weight-regular);
+}
+
 .section-header p {
   margin: 0.45rem 0 0;
   font-size: var(--text-base);
@@ -948,7 +952,7 @@ button,
   transform: translateX(3px);
 }
 
-.rank-item > span {
+.rank-item > .rank-position {
   display: grid;
   width: 1.8rem;
   height: 1.8rem;
@@ -958,6 +962,52 @@ button,
   color: #087868;
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-black);
+}
+
+.signal-rank-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.6rem;
+}
+
+.signal-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.signal-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.signal-dot.mint { background: var(--mint); }
+.signal-dot.lime { background: var(--lime); }
+.signal-dot.blue { background: var(--blue); }
+.signal-dot.amber { background: var(--amber); }
+.signal-dot.coral { background: var(--coral); }
+.signal-dot.gray { background: #879590; }
+.signal-dot.violet { background: #8b5bd6; }
+
+.signal-count {
+  display: inline-flex;
+  align-items: baseline;
+  justify-self: end;
+  gap: 0.15rem;
+  color: var(--ink);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+}
+
+.signal-count small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
 }
 
 .rank-item strong,
@@ -1229,6 +1279,23 @@ td:nth-child(8),
 td:nth-child(9) {
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-bold);
+}
+
+.priority-table th,
+.priority-table td,
+.priority-table td strong,
+.priority-table .status-badge,
+.priority-table .mini-button {
+  font-weight: var(--weight-regular);
+}
+
+.priority-table .expandable-text.is-expanded {
+  font-weight: var(--weight-regular);
+}
+
+.priority-table th:first-child,
+.priority-table td:first-child {
+  text-align: center;
 }
 
 .mini-button {

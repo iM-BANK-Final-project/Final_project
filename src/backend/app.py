@@ -186,6 +186,7 @@ def create_app(
         request: Request,
         segment: str | None = None,
         weakening_type: str | None = None,
+        risk_level: str | None = None,
         as_of_month: AsOfMonth = None,
         page: int = Query(1, ge=1),
         page_size: int = Query(50, ge=1, le=200),
@@ -193,6 +194,7 @@ def create_app(
         return repo(request).recommendations(
             segment=segment,
             weakening_type=weakening_type,
+            risk_level=risk_level,
             as_of_month=as_of_month,
             page=page,
             page_size=page_size,

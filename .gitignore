@@ -48,9 +48,13 @@ logs/
 
 .superpowers
 
+docs/
+
 # output
 *.csv
 *.png
 *.svg
 *.pdf
+*.joblib
+*.json
 

@@ -348,12 +348,15 @@ class ServiceRepository:
         page_size: int = 50,
         segment: str | None = None,
         weakening_type: str | None = None,
+        risk_level: str | None = None,
         as_of_month: str | None = None,
     ) -> dict[str, Any]:
         def query(connection: sqlite3.Connection) -> dict[str, Any]:
             month = self._month(connection, as_of_month)
             clauses, parameters = self._filters(
-                segment=segment, weakening_type=weakening_type
+                segment=segment,
+                weakening_type=weakening_type,
+                risk_level=risk_level,
             )
             where = " AND ".join(["s.as_of_month = ?", *clauses])
             query_parameters = [month, *parameters]

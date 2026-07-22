@@ -100,6 +100,12 @@ describe("AiReportPage", () => {
 
     render(<AiReportPage />);
 
+    expect(
+      screen.getByRole("heading", { name: "지속거래약화 전략 보고서" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "저장된 지속거래약화 전략 보고서" })
+    ).not.toBeInTheDocument();
     expect(await screen.findByText("알파코")).toBeInTheDocument();
     expect(screen.getByText("저장된 요약 문장입니다.")).toBeInTheDocument();
     expect(screen.getByText("저장된 약화 신호가 없습니다.")).toBeInTheDocument();
@@ -166,6 +172,8 @@ describe("AiReportPage", () => {
     expect(screen.getByText("실행 권고사항")).toBeInTheDocument();
     expect(screen.getByText("분석 유의사항")).toBeInTheDocument();
     expect(screen.getByText("72.6%")).toBeInTheDocument();
+    expect(screen.getByText("100 백만원")).toBeInTheDocument();
+    expect(screen.getByText("30 백만원")).toBeInTheDocument();
     expect(screen.getByText("선택 고객 저장 리포트")).toHaveClass("blue");
     const aiReportBadge = screen.getByText("AI Report");
     const generatedCard = aiReportBadge.closest("section");

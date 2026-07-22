@@ -141,6 +141,7 @@ def ask_gemini(question: str, sector: str, context: str = "") -> str:
 
 def build_strategy_report_prompt(context: dict) -> str:
     enriched = deepcopy(context)
+    enriched["monetaryUnit"] = "백만원"
     enriched["shapAnalysis"] = prepare_shap_report_evidence(enriched["shapFactors"])
     evidence = json.dumps(enriched, ensure_ascii=False, allow_nan=False, indent=2)
     return f"""
@@ -151,6 +152,7 @@ def build_strategy_report_prompt(context: dict) -> str:
 - risk는 향후 6개월 Y_INTERVENE_M12_v2 지속거래약화 발생 가능성입니다.
 - risk를 실제 해지, 부도, 확정 휴면 확률로 표현하지 마세요.
 - CLV_Risk와 PotentialLoss는 시나리오 추정치이며 확정 손실액이 아닙니다.
+- CLV_Risk와 PotentialLoss 금액을 문장에 인용할 때는 금액 숫자 바로 뒤에 `백만원`을 표시하세요.
 - 모든 원시 Top 10 항목을 권위 있는 입력 근거로 검토하세요. 같은 그룹의 유사 피처는 종합 신호로 결합하고 각 피처를 개별적으로 모두 언급할 필요는 없습니다.
 - 같은 그룹의 유사 피처는 하나의 종합 신호로 묶어 반복적인 문장을 피하세요.
 - 모델은 FS2_R1_DACK_DYNAMIC 56개 피처만 사용하며, 업종·지역·고객등급·전담여부는 모델 피처가 아닙니다.

@@ -249,11 +249,11 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
               </div>
               <div>
                 <span>CLV_Risk</span>
-                <strong>{scoreFormatter.format(generatedReport.metrics.clvRisk)}</strong>
+                <strong>{scoreFormatter.format(generatedReport.metrics.clvRisk)} 백만원</strong>
               </div>
               <div>
                 <span>PotentialLoss</span>
-                <strong>{scoreFormatter.format(generatedReport.metrics.potentialLoss)}</strong>
+                <strong>{scoreFormatter.format(generatedReport.metrics.potentialLoss)} 백만원</strong>
               </div>
             </div>
             <div className="generated-report-grid">
@@ -348,7 +348,7 @@ export default function AiReportPage({ selectedCustomerId }) {
     <main className="page">
       <SectionHeader
         eyebrow="Saved AI Report"
-        title="저장된 지속거래약화 전략 보고서"
+        title="지속거래약화 전략 보고서"
         description="검증 후 저장된 고객별 약화 신호, 설명값, 추천 접촉 전략을 RM 업무 언어로 보여줍니다."
       />
       {optionsState.loading && <LoadingState message="보고서 기준월을 불러오는 중입니다." />}

@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { apiGet } from "../api/client.js";
@@ -81,6 +81,12 @@ describe("OverviewPage", () => {
     expect(potentialLossValue?.nextElementSibling).toBe(amountUnit);
     expect(screen.getByText("FISIM 기반 추정치")).toBeInTheDocument();
     expect(screen.queryByText(/확정 회계손실이 아닙니다/)).not.toBeInTheDocument();
+    const signalPanel = screen.getByRole("heading", { name: "주요 약화 신호" }).closest(".panel");
+    const depositSignal = within(signalPanel).getByText("입출금").closest(".rank-item");
+    expect(depositSignal).toHaveClass("signal-rank-item");
+    expect(depositSignal?.querySelector(".signal-dot")).toHaveClass("coral");
+    expect(depositSignal?.querySelector(".signal-count")).toHaveTextContent("12건");
+    expect(depositSignal?.querySelector(".status-badge")).not.toBeInTheDocument();
     expect(screen.queryByText("알파코")).not.toBeInTheDocument();
   });
 

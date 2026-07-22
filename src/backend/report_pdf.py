@@ -187,8 +187,14 @@ def render_strategy_report_pdf(
             ],
             [
                 _paragraph(f"{validated.metrics.risk:,.2f}%", styles["metric_value"]),
-                _paragraph(f"{validated.metrics.clvRisk:,.2f}", styles["metric_value"]),
-                _paragraph(f"{validated.metrics.potentialLoss:,.2f}", styles["metric_value"]),
+                _paragraph(
+                    f"{validated.metrics.clvRisk:,.2f} 백만원",
+                    styles["metric_value"],
+                ),
+                _paragraph(
+                    f"{validated.metrics.potentialLoss:,.2f} 백만원",
+                    styles["metric_value"],
+                ),
             ],
         ]
         metric_table = Table(metric_data, colWidths=[(A4[0] - 36 * mm) / 3] * 3)

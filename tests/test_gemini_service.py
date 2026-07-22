@@ -109,6 +109,8 @@ def test_generate_strategy_report_uses_evidence_and_validates_narrative():
     assert "PotentialLoss" in call["contents"]
     assert "SHAP은 인과관계가 아닙니다" in call["contents"]
     assert "확정 손실액이 아닙니다" in call["contents"]
+    assert '"monetaryUnit": "백만원"' in call["contents"]
+    assert "금액 숫자 바로 뒤에 `백만원`" in call["contents"]
     assert call["config"].response_mime_type == "application/json"
     assert call["config"].temperature == 0.2
 
@@ -121,6 +123,7 @@ def test_build_strategy_report_prompt_preserves_context_and_every_raw_shap_field
     evidence = json.loads(prompt.split("[검증된 컨텍스트]\n", maxsplit=1)[1])
 
     assert context == original
+    assert evidence["monetaryUnit"] == "백만원"
     assert evidence["shapFactors"] == original["shapFactors"]
     derived = evidence["shapAnalysis"]["localShapTop10"]
     ordered_raw = sorted(original["shapFactors"], key=lambda factor: factor["rank"])

@@ -9,10 +9,12 @@ import { useApi } from "../hooks/useApi.js";
 export default function RecommendationsPage({ selectedCustomerId }) {
   const [segment, setSegment] = useState("");
   const [weakeningType, setWeakeningType] = useState("");
+  const [riskLevel, setRiskLevel] = useState("");
   const optionsState = useApi("/api/filter-options");
   const recommendationsState = useApi("/api/recommendations", {
     segment,
-    weakening_type: weakeningType
+    weakening_type: weakeningType,
+    risk_level: riskLevel
   });
 
   const recommendations = recommendationsState.data?.items ?? [];
@@ -40,6 +42,12 @@ export default function RecommendationsPage({ selectedCustomerId }) {
         <select aria-label="약화유형" value={weakeningType} onChange={(event) => setWeakeningType(event.target.value)}>
           <option value="">전체 약화 유형</option>
           {(optionsState.data?.weakeningTypes ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+        <select aria-label="위험도" value={riskLevel} onChange={(event) => setRiskLevel(event.target.value)}>
+          <option value="">위험도 전체</option>
+          {(optionsState.data?.riskLevels ?? []).map((option) => (
             <option key={option} value={option}>{option}</option>
           ))}
         </select>

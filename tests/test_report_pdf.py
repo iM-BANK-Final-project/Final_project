@@ -58,6 +58,8 @@ def test_pdf_contains_same_report_sections_and_top10():
     assert "주요 SHAP Value (상위 10개)" in text
     assert "feature_10" in text
     assert "80.00%" in text
+    assert "70.00 백만원" in text
+    assert "30.00 백만원" in text
     assert "페이지 1" in text
     assert "&nbsp;" not in text
     assert len(page_texts) == 2

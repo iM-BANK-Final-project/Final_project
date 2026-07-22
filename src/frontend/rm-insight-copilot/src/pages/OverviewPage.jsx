@@ -3,7 +3,7 @@ import KpiCard from "../components/KpiCard.jsx";
 import MiniTrendChart from "../components/MiniTrendChart.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
-import StatusBadge from "../components/StatusBadge.jsx";
+import StatusBadge, { resolveBadgeTone } from "../components/StatusBadge.jsx";
 import { useApi } from "../hooks/useApi.js";
 
 const percentFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
@@ -116,15 +116,23 @@ export default function OverviewPage({ onPageChange }) {
         <article className="panel">
           <SectionHeader eyebrow="Signals" title="주요 약화 신호" />
           <div className="rank-list">
-            {overview.signalSummary.map((signal, index) => (
-              <div className="rank-item" key={signal.label}>
-                <span>{index + 1}</span>
-                <strong>{signal.label}</strong>
-                <StatusBadge kind="weakening" value={signal.label}>
-                  {signal.value}건
-                </StatusBadge>
-              </div>
-            ))}
+            {overview.signalSummary.map((signal, index) => {
+              const tone = resolveBadgeTone("weakening", signal.label);
+
+              return (
+                <div className="rank-item signal-rank-item" key={signal.label}>
+                  <span className="rank-position">{index + 1}</span>
+                  <div className="signal-name">
+                    <i className={`signal-dot ${tone}`} aria-hidden="true" />
+                    <strong>{signal.label}</strong>
+                  </div>
+                  <span className="signal-count">
+                    {signal.value.toLocaleString("ko-KR")}
+                    <small>건</small>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </article>
       </section>
