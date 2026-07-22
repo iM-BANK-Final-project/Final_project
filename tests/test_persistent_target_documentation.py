@@ -47,6 +47,15 @@ class PersistentTargetDocumentationTest(unittest.TestCase):
             )
             self.assertIn("SHAP Top 10", text, path)
 
+    def test_active_docs_describe_gemini_generation_and_ephemeral_pdf(self):
+        for path in ACTIVE_DOCS:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("POST /api/reports/{corporate_id}/generate", text, path)
+            self.assertIn("POST /api/reports/{corporate_id}/pdf", text, path)
+            self.assertIn("GEMINI_API_KEY", text, path)
+            self.assertIn("RM_REPORT_FONT_PATH", text, path)
+            self.assertIn("DB에 저장하지 않", text, path)
+
 
 if __name__ == "__main__":
     unittest.main()

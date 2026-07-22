@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import ExpandableText from "../components/ExpandableText.jsx";
+import AmountUnit from "../components/AmountUnit.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
@@ -81,8 +82,16 @@ export default function PriorityPage({ onRecommendationOpen }) {
       {!loading && !error && customers.length === 0 && (
         <EmptyState message="조건에 맞는 관리 대상이 없습니다." />
       )}
-      <div className="table-panel">
-        <table>
+      <div className="table-panel priority-table-panel">
+        <div className="amount-unit-row table-unit-row">
+          <AmountUnit />
+        </div>
+        <table className="priority-table">
+          <colgroup>
+            {[6, 11, 12, 10, 8, 5, 10, 10, 10, 11, 7].map((width, index) => (
+              <col key={index} style={{ width: `${width}%` }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th>방어순위</th>
@@ -110,7 +119,11 @@ export default function PriorityPage({ onRecommendationOpen }) {
                 <td>{percentFormatter.format(customer.risk)}%</td>
                 <td>{scoreFormatter.format(customer.clvRisk)}</td>
                 <td>{scoreFormatter.format(customer.potentialLoss)}</td>
-                <td><StatusBadge tone="mint">{customer.weakeningType}</StatusBadge></td>
+                <td>
+                  <StatusBadge kind="weakening" value={customer.weakeningType}>
+                    {customer.weakeningType}
+                  </StatusBadge>
+                </td>
                 <td>
                   <button className="mini-button" onClick={() => onRecommendationOpen(customer.id)}>
                     추천 보기

@@ -34,7 +34,7 @@ const generatedReport = {
   customerName: "알파코",
   asOfMonth: "2025-06",
   generatedAt: "2026-07-21T15:00:00+09:00",
-  metrics: { risk: 72.5, clvRisk: 100, potentialLoss: 30 },
+  metrics: { risk: 72.55, clvRisk: 100, potentialLoss: 30 },
   shapFactors: Array.from({ length: 10 }, (_, index) => ({
     feature: `feature_${index + 1}`,
     featureValue: null,
@@ -49,7 +49,7 @@ const generatedReport = {
   caveats: ["SHAP은 인과관계가 아닙니다."]
 };
 
-function mockStoredReport(customers = [listedCustomer]) {
+function mockStoredReport(customers = [listedCustomer], signals = []) {
   apiGet.mockImplementation((path) => {
     if (path === "/api/filter-options") return Promise.resolve(options);
     if (path === "/api/customers") {
@@ -59,7 +59,7 @@ function mockStoredReport(customers = [listedCustomer]) {
       const id = decodeURIComponent(path.split("/").at(-1));
       const customer = customers.find((item) => item.id === id) ?? listedCustomer;
       return Promise.resolve({
-        customer: { ...customer, signals: [] },
+        customer: { ...customer, signals },
         recommendation: null,
         strategySummary: "저장된 요약 문장입니다.",
         shapAvailable: true,
@@ -72,7 +72,7 @@ function mockStoredReport(customers = [listedCustomer]) {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("AiReportPage", () => {
@@ -146,6 +146,7 @@ describe("AiReportPage", () => {
       resolveGeneration = resolve;
     }));
     render(<AiReportPage />);
+    await screen.findByText("저장된 요약 문장입니다.");
     const button = await screen.findByRole("button", { name: "전략 보고서 생성" });
 
     fireEvent.click(button);
@@ -164,7 +165,33 @@ describe("AiReportPage", () => {
     expect(screen.getByText("RM 접촉 전략")).toBeInTheDocument();
     expect(screen.getByText("실행 권고사항")).toBeInTheDocument();
     expect(screen.getByText("분석 유의사항")).toBeInTheDocument();
+    expect(screen.getByText("72.6%")).toBeInTheDocument();
+    expect(screen.getByText("선택 고객 저장 리포트")).toHaveClass("blue");
+    const aiReportBadge = screen.getByText("AI Report");
+    const generatedCard = aiReportBadge.closest("section");
+    const reportLayout = generatedCard?.parentElement;
+
+    expect(aiReportBadge).toHaveClass("violet");
+    expect(screen.queryByText("Gemini AI Report")).not.toBeInTheDocument();
+    expect(generatedCard).toHaveClass("panel", "report-card", "generated-ai-report");
+    expect(reportLayout).toHaveClass("report-layout");
+    expect(reportLayout?.children).toHaveLength(3);
+    expect(reportLayout?.lastElementChild).toBe(generatedCard);
+    expect(screen.getByText("선택 고객 저장 리포트").closest(".report-card"))
+      .toHaveTextContent("단위: 백만원");
+    expect(generatedCard).toHaveTextContent("단위: 백만원");
     expect(screen.getByRole("button", { name: "PDF 다운로드" })).toBeInTheDocument();
+  });
+
+  it("shows stored signal percentages with at most one decimal place", async () => {
+    mockStoredReport([listedCustomer], [
+      { label: "채널", change: -31.54, recent: 68, previous: 99 }
+    ]);
+
+    render(<AiReportPage />);
+
+    expect(await screen.findByText("-31.5%")).toBeInTheDocument();
+    expect(screen.queryByText("-31.54%")).not.toBeInTheDocument();
   });
 
   it("keeps the stored report and allows retry after generation failure", async () => {

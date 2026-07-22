@@ -72,7 +72,15 @@ describe("OverviewPage", () => {
     expect(screen.getByText("18.4%")).toBeInTheDocument();
     expect(screen.getByText("12.35")).toBeInTheDocument();
     expect(screen.getByText("잠재손실 방어대상 합계")).toBeInTheDocument();
-    expect(screen.getByText(/확정 회계손실이 아닙니다/)).toBeInTheDocument();
+    const potentialLossCard = screen.getByText("잠재손실 방어대상 합계").closest(".kpi-card");
+    expect(potentialLossCard).toHaveClass("blue");
+    expect(potentialLossCard?.parentElement).toHaveClass("overview-kpi-grid");
+    expect(potentialLossCard).toHaveTextContent("단위: 백만원");
+    const potentialLossValue = potentialLossCard?.querySelector(".kpi-value");
+    const amountUnit = potentialLossCard?.querySelector(".amount-unit");
+    expect(potentialLossValue?.nextElementSibling).toBe(amountUnit);
+    expect(screen.getByText("FISIM 기반 추정치")).toBeInTheDocument();
+    expect(screen.queryByText(/확정 회계손실이 아닙니다/)).not.toBeInTheDocument();
     expect(screen.queryByText("알파코")).not.toBeInTheDocument();
   });
 

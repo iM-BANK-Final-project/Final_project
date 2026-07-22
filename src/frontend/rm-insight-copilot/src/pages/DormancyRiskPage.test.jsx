@@ -33,7 +33,7 @@ const customer = {
   potentialLoss: 1.5,
   defenseRank: 2,
   weakeningType: "채널",
-  signals: [{ label: "채널활동", change: -31.5, recent: 68, previous: 99 }]
+  signals: [{ label: "채널활동", change: -31.54, recent: 68, previous: 99 }]
 };
 
 function customerPage(items = [customer]) {
@@ -57,7 +57,13 @@ describe("DormancyRiskPage", () => {
     expect(screen.getByText("81.3%")).toBeInTheDocument();
     expect(screen.getByText("채널활동")).toBeInTheDocument();
     expect(screen.getByText("최근 68 / 이전 99")).toBeInTheDocument();
+    expect(screen.getByText("단위: 백만원")).toHaveClass("amount-unit");
     expect(screen.getByText("-31.5%")).toBeInTheDocument();
+    expect(screen.queryByText("-31.54%")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText("수신중심").find((element) => element.classList.contains("status-badge"))
+    ).toHaveClass("status-badge", "blue");
+    expect(screen.getByText("채널")).toHaveClass("status-badge", "blue");
     expect(screen.getByRole("heading", { name: "지속거래약화 예측" })).toBeInTheDocument();
   });
 

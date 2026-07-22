@@ -146,6 +146,32 @@ class InterpretationTableTest(unittest.TestCase):
         self.assertTrue(local["shap_value"].notna().all())
         self.assertTrue(local["예측확률"].between(0, 1).all())
 
+    def test_local_shap_defaults_to_all_validation_rows(self):
+        models, feature_sets = self.module.fit_interpretation_models(self.train)
+        explanations = self.module.compute_shap_explanations(
+            models,
+            self.validation,
+            feature_sets,
+        )
+        probabilities = {
+            name: model.predict_proba(
+                self.validation[feature_sets[name]].astype(float)
+            )[:, 1]
+            for name, model in models.items()
+        }
+
+        local = self.module.build_local_shap_top_rows(
+            explanations,
+            self.validation,
+            probabilities,
+            top_features=2,
+        )
+
+        self.assertEqual(
+            len(local),
+            len(models) * len(self.validation) * 2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

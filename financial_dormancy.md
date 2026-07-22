@@ -105,10 +105,16 @@ API 고객 응답은 `clvRisk`, `potentialLoss`, `defenseRank`를 제공한다. 
 
 > FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
 
+### Gemini AI 보고서·PDF
+
+`POST /api/reports/{corporate_id}/generate`는 적격 3,341개 고객의 사전 계산 위험, `CLV_Risk`, `PotentialLoss`, D/A/C/K, `SHAP Top 10`, 추천 근거를 `GEMINI_API_KEY` 또는 Vertex AI로 전달해 6개 서술 섹션을 생성한다. 수치와 SHAP은 백엔드가 그대로 결합하며 Gemini가 재생성하지 않는다.
+
+`POST /api/reports/{corporate_id}/pdf`는 현재 화면의 보고서를 DB 근거와 대조한 후 `RM_REPORT_FONT_PATH` 또는 OS 한국어 폰트를 포함한 A4 PDF로 반환한다. AI 보고서와 PDF는 DB에 저장하지 않는다.
+
 ## 7. 데이터·누수·표현 원칙
 
 - 법인-월 중복, 36개월 연속성, 필수 잔액의 결측·음수를 실패 처리한다.
 - target 미래창은 feature에 사용하지 않는다.
-- 웹 요청 중 모델·LLM·CLV를 재실행하지 않고 사전 계산 결과만 조회한다.
+- 웹 요청 중 모델·CLV·SHAP은 재실행하지 않고 사전 계산 결과만 조회한다. LLM은 명시적 보고서 생성 요청에서만 실행한다.
 - “향후 6개월 지속거래약화 가능성”, “조기관리 필요”, “추천 접촉 전략”을 사용한다.
 - “실제 해지”, “확정 휴면”, “부도 위험”, “확정 회계손실”로 표현하지 않는다.

@@ -65,3 +65,9 @@ conda run -n final python -m src.backend.prepare_service_database
 ```
 
 이 명령은 최종 점수, 원천 월별 패널, FTP, 은행 금리로 `outputs/rm_service_inputs/clv_202512.csv`와 3,341개 대상 SQLite를 생성한다.
+
+## Gemini AI Report and PDF
+
+`POST /api/reports/{corporate_id}/generate`는 SQLite에 저장된 위험·`CLV_Risk`·`PotentialLoss`·D/A/C/K·`SHAP Top 10`·추천 근거로 Gemini 6개 서술 섹션을 생성한다. 백엔드는 `GEMINI_API_KEY` 또는 Vertex AI 설정을 사용하며 정량 수치와 SHAP을 LLM 응답에서 받지 않는다.
+
+`POST /api/reports/{corporate_id}/pdf`는 생성 보고서의 고객·기준월·수치·SHAP을 DB와 재검증한 후 `RM_REPORT_FONT_PATH` 또는 OS fallback 한국어 폰트로 A4 PDF를 메모리에서 생성한다. AI 보고서와 PDF는 DB에 저장하지 않는다.

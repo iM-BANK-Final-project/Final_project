@@ -8,7 +8,6 @@ import { useApi } from "../hooks/useApi.js";
 
 const percentFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
 const scoreFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
-const signalTones = ["mint", "blue", "amber", "coral", "gray"];
 
 export default function OverviewPage({ onPageChange }) {
   const overviewState = useApi("/api/overview");
@@ -71,11 +70,13 @@ export default function OverviewPage({ onPageChange }) {
               <span>지속거래약화 위험</span>
               <strong>{percentFormatter.format(topCustomer.risk)}%</strong>
             </div>
-            <StatusBadge tone="lime">{topCustomer.weakeningType}</StatusBadge>
+            <StatusBadge kind="weakening" value={topCustomer.weakeningType}>
+              {topCustomer.weakeningType}
+            </StatusBadge>
           </div>
         </article>
 
-        <section className="kpi-grid compact">
+        <section className="kpi-grid compact overview-kpi-grid">
           <KpiCard
             label="조기관리 대상"
             value={overview.managedCustomerCount.toLocaleString("ko-KR")}
@@ -96,8 +97,9 @@ export default function OverviewPage({ onPageChange }) {
           <KpiCard
             label="잠재손실 방어대상 합계"
             value={scoreFormatter.format(overview.potentialLossTotal)}
-            detail="FISIM 기반 추정치이며 확정 회계손실이 아닙니다."
+            detail="FISIM 기반 추정치"
             tone="blue"
+            showAmountUnit
           />
         </section>
       </section>
@@ -118,7 +120,7 @@ export default function OverviewPage({ onPageChange }) {
               <div className="rank-item" key={signal.label}>
                 <span>{index + 1}</span>
                 <strong>{signal.label}</strong>
-                <StatusBadge tone={signalTones[index % signalTones.length]}>
+                <StatusBadge kind="weakening" value={signal.label}>
                   {signal.value}건
                 </StatusBadge>
               </div>

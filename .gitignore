@@ -46,8 +46,11 @@ data/private/
 *.log
 logs/
 
+.superpowers
+
 # output
 *.csv
 *.png
 *.svg
+*.pdf
 

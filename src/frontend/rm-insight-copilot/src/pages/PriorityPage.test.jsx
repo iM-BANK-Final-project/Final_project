@@ -78,6 +78,11 @@ describe("PriorityPage", () => {
     expect(screen.queryByText("고객가치 대리지표")).not.toBeInTheDocument();
     expect(screen.queryByText("CRM 우선순위 점수")).not.toBeInTheDocument();
     expect(screen.queryByText("수익성")).not.toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(table).toHaveClass("priority-table");
+    expect(table.parentElement).toHaveClass("priority-table-panel");
+    expect(table.parentElement).toHaveTextContent("단위: 백만원");
+    expect(table.querySelectorAll("col")).toHaveLength(11);
   });
 
   it("keeps filters and recommendation navigation", async () => {

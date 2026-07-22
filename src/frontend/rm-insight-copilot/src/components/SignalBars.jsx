@@ -1,6 +1,12 @@
+import { formatPercent } from "../utils/formatters.js";
+import AmountUnit from "./AmountUnit.jsx";
+
 export default function SignalBars({ signals }) {
   return (
     <div className="signal-bars">
+      <div className="amount-unit-row">
+        <AmountUnit />
+      </div>
       {signals.map((signal) => (
         <div className="signal-row" key={signal.label}>
           <div>
@@ -9,7 +15,7 @@ export default function SignalBars({ signals }) {
           </div>
           <span className={signal.change < -25 ? "drop strong" : "drop"}>
             {signal.change > 0 ? "+" : ""}
-            {signal.change}%
+            {formatPercent(signal.change)}%
           </span>
         </div>
       ))}

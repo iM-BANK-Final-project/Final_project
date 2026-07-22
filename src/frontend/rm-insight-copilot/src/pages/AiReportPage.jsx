@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import ExpandableText from "../components/ExpandableText.jsx";
+import AmountUnit from "../components/AmountUnit.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { apiPost, apiPostBlob } from "../api/client.js";
 import { useApi } from "../hooks/useApi.js";
+import { formatPercent } from "../utils/formatters.js";
 
 const impactFormatter = new Intl.NumberFormat("ko-KR", {
   minimumFractionDigits: 2,
@@ -162,7 +164,7 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
         )}
       </section>
       <section className="panel report-card">
-        <StatusBadge tone="mint">선택 고객 저장 리포트</StatusBadge>
+        <StatusBadge kind="stage" value="stored">선택 고객 저장 리포트</StatusBadge>
         {reportState.loading && <LoadingState message="고객 전략을 불러오는 중입니다." />}
         {reportState.error && (
           <EmptyState message="다른 고객을 선택하거나 보고서 조회를 다시 시도해 주세요." />
@@ -173,6 +175,9 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
               <ExpandableText text={customer?.name ?? selectedId} label="기업명" lines={2} />
             </h3>
             <p>{report.strategySummary || "저장된 전략 요약이 없습니다."}</p>
+            <div className="amount-unit-row">
+              <AmountUnit />
+            </div>
             <div className="waterfall">
               {signals.map((signal) => {
                 const hasChange = signal.change != null;
@@ -182,7 +187,7 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
                   <div key={signal.label}>
                     <span>{signal.label}</span>
                     <b style={{ width: `${width}%` }}>
-                      {hasChange ? `${signal.change}%` : "변화율 미산출"}
+                      {hasChange ? `${formatPercent(signal.change)}%` : "변화율 미산출"}
                     </b>
                   </div>
                 );
@@ -211,11 +216,15 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
           검증 완료된 위험, CLV, SHAP과 추천 결과는 재계산하지 않습니다.
           AI 보고서는 생성 요청 시 이 근거만 Gemini에 전달해 작성합니다.
         </small>
-        {generatedReport && (
-          <section className="generated-ai-report" aria-labelledby="generated-report-title">
+      </section>
+      {generatedReport && (
+          <section
+            className="panel report-card generated-ai-report"
+            aria-labelledby="generated-report-title"
+          >
             <div className="generated-report-heading">
               <div>
-                <StatusBadge tone="mint">Gemini AI Report</StatusBadge>
+                <StatusBadge kind="stage" value="generated">AI Report</StatusBadge>
                 <h3 id="generated-report-title">AI 전략 보고서</h3>
               </div>
               <button
@@ -230,10 +239,13 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
             {downloadError && (
               <p className="ai-report-error-text" role="alert">{downloadError}</p>
             )}
+            <div className="amount-unit-row">
+              <AmountUnit />
+            </div>
             <div className="generated-report-metrics">
               <div>
                 <span>지속거래약화 위험</span>
-                <strong>{scoreFormatter.format(generatedReport.metrics.risk)}%</strong>
+                <strong>{formatPercent(generatedReport.metrics.risk)}%</strong>
               </div>
               <div>
                 <span>CLV_Risk</span>
@@ -279,8 +291,7 @@ function StoredReport({ asOfMonth, customers, selectedId, onSelectedIdChange }) 
               </article>
             </div>
           </section>
-        )}
-      </section>
+      )}
     </div>
   );
 }

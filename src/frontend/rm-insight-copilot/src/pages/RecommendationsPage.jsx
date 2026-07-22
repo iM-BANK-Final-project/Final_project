@@ -65,9 +65,9 @@ export default function RecommendationsPage({ selectedCustomerId }) {
                 <strong>
                   <ExpandableText text={item.name} label="기업명" />
                 </strong>
-                <small>{item.segment}</small>
+                <StatusBadge kind="segment" value={item.segment}>{item.segment}</StatusBadge>
               </div>
-              <StatusBadge tone={item.priority === "High" ? "coral" : "lime"}>
+              <StatusBadge kind="priority" value={item.priority}>
                 {item.priority}
               </StatusBadge>
             </div>

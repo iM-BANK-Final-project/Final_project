@@ -85,12 +85,14 @@ export default function DormancyRiskPage() {
                 <strong>
                   <ExpandableText text={customer.name} label="기업명" />
                 </strong>
-                <small>
+                <small className="customer-meta">
                   <ExpandableText text={customer.id} label="법인ID" lines={2} />
-                  <span> · {customer.segment}</span>
+                  <StatusBadge kind="segment" value={customer.segment}>
+                    {customer.segment}
+                  </StatusBadge>
                 </small>
               </div>
-              <StatusBadge tone={customer.risk >= 75 ? "coral" : "amber"}>
+              <StatusBadge kind="weakening" value={customer.weakeningType}>
                 {customer.weakeningType}
               </StatusBadge>
             </div>

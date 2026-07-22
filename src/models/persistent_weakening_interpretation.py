@@ -123,13 +123,15 @@ def build_local_shap_top_rows(
     explanations: dict[str, shap.Explanation],
     validation: pd.DataFrame,
     predicted_probabilities: dict[str, np.ndarray],
-    top_rows: int = 20,
+    top_rows: int | None = None,
     top_features: int = 10,
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for model_name, explanation in explanations.items():
         probabilities = np.asarray(predicted_probabilities[model_name])
-        selected = np.argsort(-probabilities, kind="stable")[:top_rows]
+        selected = np.argsort(-probabilities, kind="stable")
+        if top_rows is not None:
+            selected = selected[:top_rows]
         shap_values = _explanation_values(explanation)
         feature_values = np.asarray(explanation.data)
         feature_names = list(explanation.feature_names)

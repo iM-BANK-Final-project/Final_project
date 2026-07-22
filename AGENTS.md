@@ -25,7 +25,7 @@
 → FISIM 기반 CLV_Risk·PotentialLoss
 → 방어순위
 → 세그먼트 기반 맞춤 추천
-→ 저장 SHAP 기반 AI 전략 보고서
+→ 저장 SHAP 기반 Gemini AI 전략 보고서·PDF
 ```
 
 ## Final Y Contract
@@ -101,7 +101,7 @@ DB는 `CLV_NoRisk`도 저장하지만 UI의 고객가치 항목은 `CLV_Risk`, `
 - 서비스 준비 실패 시 기존 SQLite를 교체하지 않는다.
 - DB, API, KPI, filter options, UI의 모든 모집단은 적격 3,341개다.
 - feature는 기준월까지만 사용하고 target의 미래 관찰창을 누수시키지 않는다.
-- 웹 요청 중 모델·CLV·LLM을 실행하지 않고 사전 계산 결과만 조회한다.
+- 웹 요청 중 모델·CLV·SHAP은 재계산하지 않고 사전 계산 결과만 조회한다.
 
 ## UI and API Contract
 
@@ -112,6 +112,14 @@ DB는 `CLV_NoRisk`도 저장하지만 UI의 고객가치 항목은 `CLV_Risk`, `
 > FISIM 기반 향후 6개월 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
 
 AI 보고서는 “향후 6개월 지속거래약화 가능성”, “조기관리 필요”, “추천 접촉 전략”을 사용한다.
+
+## Gemini AI Report Contract
+
+- `POST /api/reports/{corporate_id}/generate`: 적격 고객의 저장 위험·`CLV_Risk`·`PotentialLoss`·D/A/C/K·`SHAP Top 10`·추천을 근거로 6개 고정 섹션을 Gemini에서 생성한다.
+- `POST /api/reports/{corporate_id}/pdf`: 화면 보고서를 DB 근거와 다시 대조한 후 A4 한국어 PDF를 메모리에서 생성한다.
+- 인증은 `GEMINI_API_KEY` 또는 기존 Vertex AI 환경변수를 사용하며 비밀 값을 프론트엔드에 노출하지 않는다.
+- PDF 폰트는 `RM_REPORT_FONT_PATH` 또는 지원 OS의 한국어 폰트 fallback을 사용한다.
+- AI 보고서와 PDF는 DB에 저장하지 않는다. 정량 수치와 SHAP은 Gemini가 재생성하지 않는다.
 
 ## Current Artifacts
 

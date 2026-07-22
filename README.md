@@ -94,6 +94,19 @@ outputs/rm_service/rm_service.sqlite
 → 저장 SHAP 기반 AI 전략 보고서
 ```
 
+## Gemini AI Report and PDF
+
+AI 리포트의 `전략 보고서 생성`은 `POST /api/reports/{corporate_id}/generate`를 호출한다. 백엔드는 저장된 위험, `CLV_Risk`, `PotentialLoss`, D/A/C/K 변화율, `SHAP Top 10`, 추천 결과만 Gemini에 전달하고 6개 고정 섹션을 구조화해 반환한다. 정량 수치와 SHAP은 Gemini가 재생성하지 않는다.
+
+```bash
+GEMINI_API_KEY=<your-key> \
+RM_REPORT_FONT_PATH=/path/to/korean-font.ttf \
+RM_SERVICE_DB_PATH=outputs/rm_service/rm_service.sqlite \
+  conda run -n final uvicorn src.backend.app:app --host 127.0.0.1 --port 8000
+```
+
+`PDF 다운로드`는 화면의 구조화 보고서를 `POST /api/reports/{corporate_id}/pdf`로 보내고, 백엔드가 DB 근거와 다시 대조한 뒤 한국어 A4 PDF를 메모리에서 생성한다. AI 보고서와 PDF는 DB에 저장하지 않는다. `RM_REPORT_FONT_PATH`가 없으면 macOS AppleGothic/NotoSansGothic 또는 Linux Noto/Nanum 폰트를 순서대로 탐색한다. 자동화 테스트는 Gemini를 대체해 외부 비용을 발생시키지 않는다.
+
 ## Main Artifacts
 
 - 운영 설계: `financial_dormancy.md`
