@@ -135,7 +135,6 @@ src/frontend/rm-insight-copilot/     현재 React 서비스
 src/models/                          최종 웹 모델 노트북·운영 산출물 계약
 tests/                               현재 서비스와 최종 모델 계약 테스트
 outputs/                             현재 서비스 입력·DB·최종 모델 재현 산출물
-legacy/                              과거 탐색 코드·문서·로컬 산출물
 ```
 
-`legacy/`는 현재 실행 대상이 아니다. 과거 Y·세그먼트·baseline·ablation과 이전 FISIM 산출물은 감사 목적으로만 보존하며, 현재 구현을 판단할 때는 `AGENTS.md`의 source-of-truth 순서를 따른다. 기본 `pytest`는 활성 `tests/`만 수집한다.
+기본 `pytest`는 활성 `tests/`만 수집하며, 현재 구현은 `AGENTS.md`의 source-of-truth 순서를 따른다.
