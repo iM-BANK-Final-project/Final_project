@@ -11,6 +11,7 @@ import pandas as pd
 
 
 MODEL_NAME = "LightGBM_Isotonic_Y_INTERVENE_M12_v2"
+TREND_MODEL_NAME = "FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC"
 VALID_GRADES = {"일반", "우수", "최우수"}
 VALID_DEDICATED = {"N", "Y"}
 SIGNAL_SOURCE_COLUMNS = {
@@ -75,6 +76,14 @@ CLV_COLUMNS = (
     "수익성기간",
     "미래수익성예측사용",
 )
+RISK_TREND_COLUMNS = (
+    "as_of_month",
+    "eligible_count",
+    "average_risk",
+    "high_risk_count",
+    "high_risk_share",
+    "model_name",
+)
 
 
 @dataclass
@@ -84,6 +93,7 @@ class ServiceInputs:
     source: pd.DataFrame
     operating_scores: pd.DataFrame
     clv: pd.DataFrame
+    risk_trends: pd.DataFrame
 
 
 def _require_columns(
@@ -134,10 +144,12 @@ def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
     _require_columns(inputs.source, source_columns, "원천 데이터")
     _require_columns(inputs.operating_scores, OPERATING_SCORE_COLUMNS, "운영 점수")
     _require_columns(inputs.clv, CLV_COLUMNS, "CLV")
+    _require_columns(inputs.risk_trends, RISK_TREND_COLUMNS, "월별 위험 추세")
 
     source = inputs.source.copy()
     scores = inputs.operating_scores.copy()
     clv = inputs.clv.copy()
+    risk_trends = inputs.risk_trends.copy()
     for frame, label in ((source, "원천"), (scores, "운영 점수"), (clv, "CLV")):
         if frame["법인ID"].isna().any():
             raise ValueError(f"{label} 법인ID에 결측이 있습니다.")
@@ -153,7 +165,69 @@ def _normalized_inputs(inputs: ServiceInputs) -> ServiceInputs:
     clv["미래수익성예측사용"] = _normalize_boolean(
         clv["미래수익성예측사용"], "미래수익성예측사용"
     )
-    return ServiceInputs(source, scores, clv)
+    risk_trends["as_of_month"] = normalize_month(risk_trends["as_of_month"])
+    return ServiceInputs(source, scores, clv, risk_trends)
+
+
+def _validated_risk_trends(
+    frame: pd.DataFrame,
+    scores_month: pd.DataFrame,
+    month: str,
+) -> pd.DataFrame:
+    """Validate the fixed-model six-month aggregate and reconcile its current month."""
+    trend = frame.loc[:, RISK_TREND_COLUMNS].copy()
+    if trend["as_of_month"].duplicated().any():
+        raise ValueError("월별 위험 추세 기준월이 중복되었습니다.")
+    trend = trend.sort_values("as_of_month").reset_index(drop=True)
+    expected_months = pd.period_range(
+        pd.Period(month, freq="M") - 5,
+        pd.Period(month, freq="M"),
+        freq="M",
+    ).astype(str).tolist()
+    if trend["as_of_month"].tolist() != expected_months:
+        raise ValueError(f"월별 위험 추세는 {expected_months[0]}~{month} 6개월이어야 합니다.")
+    if not trend["model_name"].eq(TREND_MODEL_NAME).all():
+        raise ValueError(f"월별 위험 추세 모델은 {TREND_MODEL_NAME}이어야 합니다.")
+
+    numeric_columns = (
+        "eligible_count",
+        "average_risk",
+        "high_risk_count",
+        "high_risk_share",
+    )
+    trend = _numeric_contract(trend, numeric_columns, "월별 위험 추세")
+    if not trend["average_risk"].between(0, 1).all() or not trend[
+        "high_risk_share"
+    ].between(0, 1).all():
+        raise ValueError("월별 위험 추세 비율은 0과 1 사이여야 합니다.")
+    counts = trend[["eligible_count", "high_risk_count"]]
+    if (counts < 0).any().any() or not np.equal(counts, np.floor(counts)).all().all():
+        raise ValueError("월별 위험 추세 고객 수는 0 이상의 정수여야 합니다.")
+    if (trend["high_risk_count"] > trend["eligible_count"]).any():
+        raise ValueError("월별 고위험 고객 수는 적격 고객 수를 초과할 수 없습니다.")
+    calculated_share = trend["high_risk_count"] / trend["eligible_count"]
+    if not np.allclose(calculated_share, trend["high_risk_share"], rtol=0, atol=1e-12):
+        raise ValueError("월별 위험 추세 고위험 비중과 고객 수가 일치하지 않습니다.")
+
+    current = trend.iloc[-1]
+    expected = {
+        "eligible_count": len(scores_month),
+        "average_risk": float(scores_month["risk_probability"].mean()),
+        "high_risk_count": int(scores_month["risk_probability"].ge(0.75).sum()),
+    }
+    expected["high_risk_share"] = expected["high_risk_count"] / expected["eligible_count"]
+    matches = (
+        int(current["eligible_count"]) == expected["eligible_count"]
+        and int(current["high_risk_count"]) == expected["high_risk_count"]
+        and np.isclose(current["average_risk"], expected["average_risk"], rtol=0, atol=1e-12)
+        and np.isclose(current["high_risk_share"], expected["high_risk_share"], rtol=0, atol=1e-12)
+    )
+    if not matches:
+        raise ValueError("월별 위험 추세 12월 값이 12월 운영 점수와 일치하지 않습니다.")
+    trend[["eligible_count", "high_risk_count"]] = trend[
+        ["eligible_count", "high_risk_count"]
+    ].astype(int)
+    return trend
 
 
 def _common_months(inputs: ServiceInputs) -> list[str]:
@@ -462,6 +536,7 @@ def build_service_tables(
     source = normalized.source
     scores = normalized.operating_scores
     clv = normalized.clv
+    risk_trends = normalized.risk_trends
     _validate_unique(source, "기준년월", "원천 데이터")
     _validate_unique(scores, "cutoff_month", "운영 점수")
     _validate_unique(clv, "기준월", "CLV")
@@ -483,6 +558,7 @@ def build_service_tables(
     scores_month = scores.loc[
         scores["cutoff_month"].eq(month) & scores["score_eligible"]
     ].copy()
+    risk_trends = _validated_risk_trends(risk_trends, scores_month, month)
     clv_month = clv.loc[clv["기준월"].eq(month)].copy()
     source_month = source.loc[source["기준년월"].eq(month)].copy()
     joined = (
@@ -677,4 +753,5 @@ def build_service_tables(
         "recommendations": recommendations.reset_index(drop=True),
         "customer_snapshots": snapshots.reset_index(drop=True),
         "monthly_summaries": monthly_summaries,
+        "risk_trends": risk_trends,
     }

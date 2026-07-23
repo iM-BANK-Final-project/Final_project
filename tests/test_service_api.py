@@ -64,6 +64,14 @@ def service_database(tmp_path):
           ('2025-05', 1, .70, 1.0, 20, '{"입출금": 1}'),
           ('2025-12', 3, .60, .3333333333, 45,
            '{"복합 거래활동": 1, "채널": 1, "카드": 1}');
+
+        INSERT INTO risk_trends VALUES
+          ('2025-07', 3, .50, 1, .3333333333, 'FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC'),
+          ('2025-08', 3, .52, 1, .3333333333, 'FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC'),
+          ('2025-09', 3, .54, 1, .3333333333, 'FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC'),
+          ('2025-10', 3, .56, 1, .3333333333, 'FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC'),
+          ('2025-11', 3, .58, 1, .3333333333, 'FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC'),
+          ('2025-12', 3, .60, 1, .3333333333, 'FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC');
         """
     )
     connection.commit()
@@ -139,8 +147,12 @@ def test_overview_returns_potential_loss_total_and_trend(client):
         "highRiskShare": pytest.approx(33.33333333),
         "potentialLossTotal": 45.0,
         "monthlyTrend": [
-            {"month": "2025-05", "risk": 70.0, "managed": 1},
-            {"month": "2025-12", "risk": 60.0, "managed": 3},
+            {"month": "2025-07", "risk": 50.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-08", "risk": 52.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-09", "risk": 54.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-10", "risk": 56.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-11", "risk": 58.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-12", "risk": 60.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": True},
         ],
         "signalSummary": [
             {"label": "복합 거래활동", "value": 1},

@@ -84,13 +84,16 @@ class ServiceRepository:
                 return None
             trend = connection.execute(
                 """
-                SELECT as_of_month, managed_customer_count, average_risk
-                FROM monthly_summaries
+                SELECT as_of_month, eligible_count, average_risk,
+                       high_risk_count, high_risk_share
+                FROM risk_trends
                 WHERE as_of_month <= ?
-                ORDER BY as_of_month ASC
+                ORDER BY as_of_month DESC
+                LIMIT 6
                 """,
                 (month,),
             ).fetchall()
+            trend = list(reversed(trend))
             distribution = json.loads(summary["signal_distribution_json"])
             return {
                 "asOfMonth": month,
@@ -101,8 +104,11 @@ class ServiceRepository:
                 "monthlyTrend": [
                     {
                         "month": row["as_of_month"],
-                        "risk": row["average_risk"] * 100,
-                        "managed": row["managed_customer_count"],
+                        "risk": round(row["average_risk"] * 100, 10),
+                        "highRiskShare": round(row["high_risk_share"] * 100, 10),
+                        "highRiskCount": row["high_risk_count"],
+                        "eligibleCount": row["eligible_count"],
+                        "isCurrent": row["as_of_month"] == month,
                     }
                     for row in trend
                 ],

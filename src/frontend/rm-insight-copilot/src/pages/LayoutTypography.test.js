@@ -48,3 +48,21 @@ it("keeps the login page background independent", () => {
 
   expect(loginRule).toMatch(/background:\s*#fff/);
 });
+
+it("uses the high-contrast iM Bank mint and lime palette in the overview trend", () => {
+  const rootRule = stylesheet.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+  const lineRule = stylesheet.match(/\.risk-trend-line\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+  const barRule = stylesheet.match(/\.risk-trend-bar\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+  const currentBarRule = stylesheet.match(
+    /\.risk-trend-bar\.is-current\s*\{([\s\S]*?)\}/
+  )?.[1] ?? "";
+
+  expect(rootRule).toMatch(/--mint-deep:\s*#007f6d/);
+  expect(lineRule).toMatch(/stroke:\s*var\(--mint-deep\)/);
+  expect(lineRule).toMatch(/stroke-width:\s*5/);
+  expect(barRule).toMatch(/var\(--lime\)/);
+  expect(barRule).toMatch(/var\(--mint\)/);
+  expect(barRule).not.toMatch(/stroke:/);
+  expect(currentBarRule).toMatch(/fill:\s*var\(--mint\)/);
+  expect(currentBarRule).not.toMatch(/stroke:/);
+});

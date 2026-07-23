@@ -52,9 +52,9 @@ docs/
 
 # output
 *.csv
+!src/models/web_m12_overview_risk_trend_202507_202512.csv
 *.png
 *.svg
 *.pdf
 *.joblib
 *.json
-

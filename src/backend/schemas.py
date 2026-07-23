@@ -74,7 +74,10 @@ class RecommendationPage(BaseModel):
 class MonthlyTrend(BaseModel):
     month: str
     risk: float
-    managed: int
+    highRiskShare: float
+    highRiskCount: int
+    eligibleCount: int
+    isCurrent: bool
 
 
 class SignalSummary(BaseModel):

@@ -97,8 +97,22 @@ def _clv() -> pd.DataFrame:
     )
 
 
+def _risk_trends() -> pd.DataFrame:
+    months = pd.period_range("2025-07", "2025-12", freq="M").astype(str)
+    return pd.DataFrame(
+        {
+            "as_of_month": months,
+            "eligible_count": [2] * 6,
+            "average_risk": [0.55, 0.54, 0.53, 0.52, 0.51, 0.60],
+            "high_risk_count": [1] * 6,
+            "high_risk_share": [0.5] * 6,
+            "model_name": ["FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC"] * 6,
+        }
+    )
+
+
 def _inputs() -> ServiceInputs:
-    return ServiceInputs(_source(), _operating_scores(), _clv())
+    return ServiceInputs(_source(), _operating_scores(), _clv(), _risk_trends())
 
 
 def test_normalize_month_accepts_supported_representations():
@@ -136,6 +150,7 @@ def test_build_service_tables_filters_ineligible_score_rows_and_removes_proxy_co
         "recommendations",
         "customer_snapshots",
         "monthly_summaries",
+        "risk_trends",
     }
     snapshots = tables["customer_snapshots"].set_index("corporate_id")
     assert snapshots.index.tolist() == ["B", "C"]
@@ -146,6 +161,30 @@ def test_build_service_tables_filters_ineligible_score_rows_and_removes_proxy_co
     assert "customer_value_proxy" not in snapshots.columns
     assert "crm_priority_score" not in snapshots.columns
     assert tables["monthly_summaries"].loc[0, "potential_loss_total"] == 30.0
+    assert tables["risk_trends"]["as_of_month"].tolist() == [
+        "2025-07",
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2025-12",
+    ]
+    assert tables["risk_trends"].iloc[-1].to_dict() == {
+        "as_of_month": "2025-12",
+        "eligible_count": 2,
+        "average_risk": pytest.approx(0.6),
+        "high_risk_count": 1,
+        "high_risk_share": pytest.approx(0.5),
+        "model_name": "FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC",
+    }
+
+
+def test_build_service_tables_rejects_trend_that_does_not_reconcile_with_december():
+    inputs = _inputs()
+    inputs.risk_trends.loc[5, "average_risk"] = 0.61
+
+    with pytest.raises(ValueError, match="12월 운영 점수와 일치"):
+        build_service_tables(inputs)
 
 
 def test_build_service_tables_uses_final_segments_shap_and_four_axis_signals():

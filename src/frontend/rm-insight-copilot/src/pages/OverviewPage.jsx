@@ -1,6 +1,6 @@
 import ExpandableText from "../components/ExpandableText.jsx";
 import KpiCard from "../components/KpiCard.jsx";
-import MiniTrendChart from "../components/MiniTrendChart.jsx";
+import OverviewRiskTrendChart from "../components/OverviewRiskTrendChart.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge, { resolveBadgeTone } from "../components/StatusBadge.jsx";
@@ -109,9 +109,9 @@ export default function OverviewPage({ onPageChange }) {
           <SectionHeader
             eyebrow="Trend"
             title="월별 지속거래약화 위험"
-            description="기준월별 rolling scoring 흐름으로 관리 대상 변화를 확인합니다."
+            description="최근 6개월 평균 위험과 고위험 고객 비중의 흐름을 확인합니다."
           />
-          <MiniTrendChart data={overview.monthlyTrend} />
+          <OverviewRiskTrendChart data={overview.monthlyTrend} />
         </article>
         <article className="panel">
           <SectionHeader eyebrow="Signals" title="주요 약화 신호" />

@@ -1,5 +1,6 @@
 :root {
   --mint: #00c7a9;
+  --mint-deep: #007f6d;
   --lime: #e2f15e;
   --mint-soft: #e9fbf7;
   --lime-soft: #f8fbd4;
@@ -926,6 +927,151 @@ button,
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-bold);
+}
+
+.overview-risk-trend {
+  margin-top: 1.35rem;
+}
+
+.risk-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.15rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.risk-trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.legend-line,
+.legend-bar {
+  display: inline-block;
+  width: 1.35rem;
+}
+
+.legend-line {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--mint-deep);
+}
+
+.legend-bar {
+  height: 0.7rem;
+  border-radius: 0.25rem;
+  background: linear-gradient(180deg, var(--lime), var(--mint));
+}
+
+.risk-trend-plot {
+  display: block;
+  width: 100%;
+  height: 230px;
+  margin-top: 0.3rem;
+  overflow: visible;
+}
+
+.risk-trend-gridline {
+  stroke: color-mix(in srgb, var(--line) 72%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+
+.risk-trend-bar {
+  fill: color-mix(in srgb, var(--lime) 62%, var(--mint));
+}
+
+.risk-trend-bar.is-current {
+  fill: var(--mint);
+}
+
+.risk-trend-line {
+  fill: none;
+  stroke: var(--mint-deep);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.risk-trend-point {
+  fill: var(--panel);
+  stroke: var(--mint-deep);
+  stroke-width: 3;
+}
+
+.risk-trend-point.is-current {
+  fill: var(--lime);
+  stroke-width: 4;
+}
+
+.risk-trend-labels {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.risk-trend-label {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+  padding: 0.55rem 0.35rem;
+  border-radius: 0.75rem;
+  text-align: center;
+}
+
+.risk-trend-label.is-current {
+  background: color-mix(in srgb, var(--lime) 34%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mint) 42%, transparent);
+}
+
+.risk-trend-month {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.risk-trend-label strong {
+  font-size: var(--text-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-trend-label small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.risk-trend-label .current-label {
+  color: var(--ink);
+  font-weight: var(--weight-bold);
+}
+
+.risk-trend-note {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .risk-trend-plot {
+    height: 190px;
+  }
+
+  .risk-trend-labels {
+    gap: 0.2rem;
+  }
+
+  .risk-trend-label {
+    padding-inline: 0.1rem;
+  }
+
+  .risk-trend-label small:not(.current-label) {
+    display: none;
+  }
 }
 
 .rank-list,

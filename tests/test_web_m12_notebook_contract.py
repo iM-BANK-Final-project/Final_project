@@ -77,3 +77,23 @@ def test_profitability_notebook_uses_operating_scores_and_actual_six_month_clv()
     assert "'future_profitability_forecast_used': False" in source
     assert "'survival_formula_used': False" in source
     assert "S_사건미발생확률" not in source
+
+
+def test_profitability_notebook_exports_fixed_model_six_month_overview_trend():
+    source = code_from(PROFITABILITY_NOTEBOOK)
+
+    assert "OVERVIEW_TREND_CUTOFFS" in source
+    assert "pd.period_range('2025-07', '2025-12', freq='M')" in source
+    assert "risk_probability >= 0.75" in source
+    assert "web_m12_overview_risk_trend_202507_202512.csv" in source
+    assert "len(OVERVIEW_RISK_TREND) == 6" in source
+    assert "december_existing_probability" in source
+
+
+def test_web_notebook_validates_overview_trend_without_retraining():
+    source = code_from(NOTEBOOK)
+
+    assert "OVERVIEW_TREND_PATH" in source
+    assert "web_m12_overview_risk_trend_202507_202512.csv" in source
+    assert "overview_trend['as_of_month'].tolist()" in source
+    assert "overview_trend.loc[overview_trend['as_of_month'].eq('2025-12')" in source

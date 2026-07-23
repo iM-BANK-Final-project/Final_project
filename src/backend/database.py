@@ -113,6 +113,15 @@ CREATE TABLE IF NOT EXISTS monthly_summaries (
     signal_distribution_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS risk_trends (
+    as_of_month TEXT PRIMARY KEY,
+    eligible_count INTEGER NOT NULL CHECK (eligible_count >= 0),
+    average_risk REAL NOT NULL CHECK (average_risk BETWEEN 0 AND 1),
+    high_risk_count INTEGER NOT NULL CHECK (high_risk_count >= 0),
+    high_risk_share REAL NOT NULL CHECK (high_risk_share BETWEEN 0 AND 1),
+    model_name TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS import_runs (
     run_id TEXT PRIMARY KEY,
     started_at TEXT NOT NULL,

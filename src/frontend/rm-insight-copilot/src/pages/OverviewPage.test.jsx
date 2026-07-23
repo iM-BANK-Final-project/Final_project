@@ -10,14 +10,18 @@ import OverviewPage from "./OverviewPage.jsx";
 vi.mock("../api/client.js", () => ({ apiGet: vi.fn() }));
 
 const overview = {
-  asOfMonth: "2025-06",
+  asOfMonth: "2025-12",
   managedCustomerCount: 27,
   averageRisk: 63.25,
   highRiskShare: 18.4,
   potentialLossTotal: 12.345,
   monthlyTrend: [
-    { month: "2025-05", risk: 0, managed: 20 },
-    { month: "2025-06", risk: 63.25, managed: 27 }
+    { month: "2025-07", risk: 3.7, highRiskShare: 0.2, highRiskCount: 7, eligibleCount: 3347, isCurrent: false },
+    { month: "2025-08", risk: 4.3, highRiskShare: 0.2, highRiskCount: 6, eligibleCount: 3348, isCurrent: false },
+    { month: "2025-09", risk: 3.9, highRiskShare: 0.4, highRiskCount: 12, eligibleCount: 3348, isCurrent: false },
+    { month: "2025-10", risk: 4.1, highRiskShare: 0.3, highRiskCount: 10, eligibleCount: 3345, isCurrent: false },
+    { month: "2025-11", risk: 4.6, highRiskShare: 0.3, highRiskCount: 11, eligibleCount: 3344, isCurrent: false },
+    { month: "2025-12", risk: 3.5, highRiskShare: 0.4, highRiskCount: 15, eligibleCount: 3341, isCurrent: true }
   ],
   signalSummary: [
     { label: "입출금", value: 12 },
@@ -88,6 +92,12 @@ describe("OverviewPage", () => {
     expect(depositSignal?.querySelector(".signal-count")).toHaveTextContent("12건");
     expect(depositSignal?.querySelector(".status-badge")).not.toBeInTheDocument();
     expect(screen.queryByText("알파코")).not.toBeInTheDocument();
+    const trendChart = screen.getByRole("group", { name: "월별 지속거래약화 위험 추세" });
+    expect(within(trendChart).getByText("평균 위험")).toBeInTheDocument();
+    expect(within(trendChart).getByText("고위험 고객 비중")).toBeInTheDocument();
+    expect(within(trendChart).getByText("현재 기준")).toBeInTheDocument();
+    expect(within(trendChart).getByText("3.5%")).toBeInTheDocument();
+    expect(trendChart.querySelector(".risk-trend-label.is-current")).toHaveTextContent("15명");
   });
 
   it("keeps both overview navigation actions", async () => {

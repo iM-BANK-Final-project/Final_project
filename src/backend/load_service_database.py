@@ -104,6 +104,14 @@ SERVICE_TABLE_COLUMNS = {
         "potential_loss_total",
         "signal_distribution_json",
     ),
+    "risk_trends": (
+        "as_of_month",
+        "eligible_count",
+        "average_risk",
+        "high_risk_count",
+        "high_risk_share",
+        "model_name",
+    ),
 }
 
 
@@ -114,6 +122,7 @@ class ServiceSourcePaths:
     source: Path
     operating_scores: Path
     clv: Path
+    risk_trends: Path
 
 
 @dataclass(frozen=True)
@@ -150,6 +159,7 @@ def _read_inputs(paths: ServiceSourcePaths) -> ServiceInputs:
             low_memory=False,
         ),
         clv=pd.read_csv(paths.clv, dtype={"법인ID": "string"}, low_memory=False),
+        risk_trends=pd.read_csv(paths.risk_trends, low_memory=False),
     )
 
 
@@ -249,6 +259,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--operating-scores", required=True, type=Path)
     parser.add_argument("--clv", required=True, type=Path)
+    parser.add_argument("--risk-trends", required=True, type=Path)
     parser.add_argument("--database", type=Path, default=DEFAULT_DATABASE_PATH)
     parser.add_argument("--as-of-month")
     return parser
@@ -260,6 +271,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         source=args.source,
         operating_scores=args.operating_scores,
         clv=args.clv,
+        risk_trends=args.risk_trends,
     )
     try:
         summary = load_service_database(paths, args.database, args.as_of_month)

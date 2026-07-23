@@ -25,6 +25,7 @@ EXPECTED_TABLES = {
     "recommendations",
     "customer_snapshots",
     "monthly_summaries",
+    "risk_trends",
     "import_runs",
 }
 
@@ -127,11 +128,25 @@ def _clv_frame() -> pd.DataFrame:
     )
 
 
+def _risk_trend_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "as_of_month": pd.period_range("2025-07", "2025-12", freq="M").astype(str),
+            "eligible_count": [1] * 6,
+            "average_risk": [0.5, 0.55, 0.6, 0.65, 0.7, 0.8],
+            "high_risk_count": [0, 0, 0, 0, 0, 1],
+            "high_risk_share": [0, 0, 0, 0, 0, 1],
+            "model_name": ["FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC"] * 6,
+        }
+    )
+
+
 def _write_service_source_csvs(directory: Path) -> ServiceSourcePaths:
     frames = {
         "source": _source_frame(),
         "operating_scores": _score_frame(),
         "clv": _clv_frame(),
+        "risk_trends": _risk_trend_frame(),
     }
     paths = {}
     for name, frame in frames.items():
@@ -177,6 +192,14 @@ def test_initialize_schema_creates_final_clv_tables_and_columns(tmp_path):
         "dedicated_yn",
     ]
     assert "potential_loss_total" in _table_columns(connection, "monthly_summaries")
+    assert _table_columns(connection, "risk_trends") == [
+        "as_of_month",
+        "eligible_count",
+        "average_risk",
+        "high_risk_count",
+        "high_risk_share",
+        "model_name",
+    ]
     connection.close()
 
 
@@ -226,6 +249,8 @@ def test_load_service_database_builds_atomic_completed_snapshot(tmp_path):
     assert snapshot["potential_loss"] == 30.0
     assert snapshot["defense_rank"] == 1
     assert shap_ranks == list(range(1, 11))
+    with connect_database(db_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM risk_trends").fetchone()[0] == 6
 
 
 def test_load_service_database_records_hashes_paths_and_row_counts(tmp_path):
@@ -270,6 +295,8 @@ def test_load_cli_failure_returns_nonzero_and_preserves_previous_database(
             str(paths.operating_scores),
             "--clv",
             str(paths.clv),
+            "--risk-trends",
+            str(paths.risk_trends),
             "--database",
             str(db_path),
             "--as-of-month",

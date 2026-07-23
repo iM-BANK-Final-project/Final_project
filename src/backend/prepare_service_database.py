@@ -27,6 +27,9 @@ DEFAULT_SOURCE_PATH = Path("outputs/iM뱅크데이터_거시경제지표포함.c
 DEFAULT_RISK_SCORES_PATH = Path(
     "src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv"
 )
+DEFAULT_RISK_TRENDS_PATH = Path(
+    "src/models/web_m12_overview_risk_trend_202507_202512.csv"
+)
 DEFAULT_FTP_PATH = Path("outputs/iM뱅크_월별_추정FTP_2023_2025.csv")
 DEFAULT_BANK_RATES_PATH = Path("outputs/예대금리차2023~2025_순.csv")
 DEFAULT_DERIVED_DIR = Path("outputs/rm_service_inputs")
@@ -170,6 +173,7 @@ def prepare_and_load_service_database(
     *,
     source_path: Path,
     operating_scores_path: Path,
+    risk_trends_path: Path,
     ftp_path: Path,
     bank_rates_path: Path,
     derived_dir: Path,
@@ -202,6 +206,7 @@ def prepare_and_load_service_database(
             source=source_path,
             operating_scores=operating_scores_path,
             clv=clv_path,
+            risk_trends=risk_trends_path,
         ),
         database_path,
         as_of_month or OPERATING_CUTOFF,
@@ -216,6 +221,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--operating-scores", type=Path, default=DEFAULT_RISK_SCORES_PATH
     )
+    parser.add_argument("--risk-trends", type=Path, default=DEFAULT_RISK_TRENDS_PATH)
     parser.add_argument("--ftp", type=Path, default=DEFAULT_FTP_PATH)
     parser.add_argument("--bank-rates", type=Path, default=DEFAULT_BANK_RATES_PATH)
     parser.add_argument("--derived-dir", type=Path, default=DEFAULT_DERIVED_DIR)
@@ -230,6 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary = prepare_and_load_service_database(
             source_path=args.source,
             operating_scores_path=args.operating_scores,
+            risk_trends_path=args.risk_trends,
             ftp_path=args.ftp,
             bank_rates_path=args.bank_rates,
             derived_dir=args.derived_dir,
