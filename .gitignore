@@ -58,3 +58,5 @@ docs/
 *.pdf
 *.joblib
 *.json
+!/package.json
+!/package-lock.json

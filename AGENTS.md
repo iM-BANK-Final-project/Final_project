@@ -16,6 +16,8 @@
 
 `y_setting_pipeline.md`와 2026-07-13 이전 설계·코드는 과거 Y 탐색 이력이다.
 
+`legacy/`는 현재 런타임·모델 입력·테스트 수집 대상이 아니다. 과거 탐색 근거 확인에만 사용하며, legacy 코드나 산출물을 현재 source of truth보다 우선하지 않는다.
+
 ## Service Flow
 
 ```text

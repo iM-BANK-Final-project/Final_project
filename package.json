@@ -1,0 +1,13 @@
+{
+  "name": "rm-insight-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --kill-others --names BACKEND,FRONTEND --prefix-colors blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "python -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8000 --reload",
+    "dev:frontend": "npm --prefix src/frontend/rm-insight-copilot run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

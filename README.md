@@ -66,15 +66,26 @@ defense_value = max(PotentialLoss, 0)
 
 저장된 최종 점수와 원천·금리 CSV로 CLV를 계산하고 SQLite를 원자적으로 재생성합니다. 노트북이나 모델을 웹 요청 중 실행하지 않습니다.
 
+먼저 백엔드 의존성이 설치된 Python 환경을 활성화합니다. 프로젝트를 처음 받은 경우 루트와 프론트엔드의 Node 의존성을 각각 한 번 설치합니다.
+
 ```bash
-conda run -n final python -m src.backend.prepare_service_database
+npm install
+npm --prefix src/frontend/rm-insight-copilot install
+```
 
-RM_SERVICE_DB_PATH=outputs/rm_service/rm_service.sqlite \
-  conda run -n final uvicorn src.backend.app:app --host 127.0.0.1 --port 8000
+최초 실행 또는 입력 데이터 변경 시 서비스 DB를 준비합니다.
 
-cd src/frontend/rm-insight-copilot
+```bash
+python -m src.backend.prepare_service_database
+```
+
+이후 프로젝트 루트에서 백엔드와 프론트엔드를 함께 실행합니다.
+
+```bash
 npm run dev
 ```
+
+백엔드는 `http://127.0.0.1:8000`, 프론트엔드는 `http://127.0.0.1:5173`에서 실행됩니다. `Ctrl+C`를 누르거나 한 프로세스가 종료되면 나머지 프로세스도 함께 종료됩니다.
 
 기본 생성물:
 
@@ -115,3 +126,16 @@ RM_SERVICE_DB_PATH=outputs/rm_service/rm_service.sqlite \
 - 서비스 통합 설계: `docs/superpowers/specs/2026-07-21-m12-model-clv-service-integration-design.md`
 - 서비스 준비: `src/backend/prepare_service_database.py`
 - FISIM/CLV 구현: `src/backend/m12_clv.py`
+
+## Project Layout
+
+```text
+src/backend/                         현재 FastAPI·SQLite·CLV·AI 보고서 코드
+src/frontend/rm-insight-copilot/     현재 React 서비스
+src/models/                          최종 웹 모델 노트북·운영 산출물 계약
+tests/                               현재 서비스와 최종 모델 계약 테스트
+outputs/                             현재 서비스 입력·DB·최종 모델 재현 산출물
+legacy/                              과거 탐색 코드·문서·로컬 산출물
+```
+
+`legacy/`는 현재 실행 대상이 아니다. 과거 Y·세그먼트·baseline·ablation과 이전 FISIM 산출물은 감사 목적으로만 보존하며, 현재 구현을 판단할 때는 `AGENTS.md`의 source-of-truth 순서를 따른다. 기본 `pytest`는 활성 `tests/`만 수집한다.
