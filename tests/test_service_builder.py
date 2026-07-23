@@ -68,6 +68,19 @@ def _operating_scores() -> pd.DataFrame:
             "CTX__업종_대분류__현재": ["제조업", "제조업", "도매 및 소매업"],
             "CTX__업종_중분류__현재": ["전자", "기계", "도매"],
             "risk_probability": [0.9, 0.8, 0.4],
+            "risk_rank_eligible": [pd.NA, 1, 2],
+            "risk_band": ["OUT_OF_SCOPE", "G1_TOP_1", "G5_REST"],
+            "risk_band_name": ["적격 제외", "상위 1%", "나머지 90%"],
+            "risk_band_order": [pd.NA, 1, 5],
+            "predicted_positive_model_scope": [pd.NA, 1, 1],
+            "threshold": [0.26479401324821045] * 3,
+            "target_name": ["Y_INTERVENE_M12_v2"] * 3,
+            "feature_set": ["FS_FINAL_164_TUNED"] * 3,
+            "feature_count": [164] * 3,
+            "calibration_method": ["PLATT"] * 3,
+            "probability_status": [
+                "VALIDATION_PLATT_LOCKED_SERVICE_REESTIMATION_DEFERRED"
+            ] * 3,
             "요구불_최근3대이전9_변화율_pct": [-70.0, -40.0, -20.0],
             "자동이체_최근3대이전9_변화율_pct": [-60.0, -35.0, -10.0],
             "채널_최근3대이전9_변화율_pct": [-50.0, -30.0, -5.0],
@@ -104,9 +117,9 @@ def _risk_trends() -> pd.DataFrame:
             "as_of_month": months,
             "eligible_count": [2] * 6,
             "average_risk": [0.55, 0.54, 0.53, 0.52, 0.51, 0.60],
-            "high_risk_count": [1] * 6,
-            "high_risk_share": [0.5] * 6,
-            "model_name": ["FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC"] * 6,
+            "high_risk_count": [2] * 6,
+            "high_risk_share": [1.0] * 6,
+            "model_name": ["FS_FINAL_164_TUNED_LIGHTGBM_PLATT"] * 6,
         }
     )
 
@@ -157,6 +170,20 @@ def test_build_service_tables_filters_ineligible_score_rows_and_removes_proxy_co
     assert snapshots.loc["B", "clv_risk"] == 70.0
     assert snapshots.loc["B", "potential_loss"] == 30.0
     assert snapshots.loc["B", "defense_rank"] == 2
+    assert snapshots.loc["B", "risk_band"] == "G1_TOP_1"
+    assert snapshots.loc["C", "risk_band"] == "G5_REST"
+    assert list(tables["risk_scores"].columns) == [
+        "corporate_id",
+        "as_of_month",
+        "model_name",
+        "risk_probability",
+        "risk_rank",
+        "risk_band",
+        "risk_band_name",
+        "risk_band_order",
+        "predicted_positive",
+        "threshold",
+    ]
     assert pd.isna(snapshots.loc["C", "defense_rank"])
     assert "customer_value_proxy" not in snapshots.columns
     assert "crm_priority_score" not in snapshots.columns
@@ -173,9 +200,9 @@ def test_build_service_tables_filters_ineligible_score_rows_and_removes_proxy_co
         "as_of_month": "2025-12",
         "eligible_count": 2,
         "average_risk": pytest.approx(0.6),
-        "high_risk_count": 1,
-        "high_risk_share": pytest.approx(0.5),
-        "model_name": "FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC",
+        "threshold_count": 2,
+        "threshold_share": pytest.approx(1.0),
+        "model_name": "FS_FINAL_164_TUNED_LIGHTGBM_PLATT",
     }
 
 
@@ -235,6 +262,14 @@ def test_build_service_tables_rejects_invalid_probability():
     inputs.operating_scores.loc[1, "risk_probability"] = 1.01
 
     with pytest.raises(ValueError, match="0과 1"):
+        build_service_tables(inputs)
+
+
+def test_build_service_tables_rejects_changed_final_model_contract():
+    inputs = _inputs()
+    inputs.operating_scores["feature_set"] = "UNEXPECTED"
+
+    with pytest.raises(ValueError, match="feature_set"):
         build_service_tables(inputs)
 
 
@@ -310,6 +345,13 @@ def test_recommendation_uses_approved_actions_and_context_copy():
             "corporate_id": ["A", "B", "C", "D", "E"],
             "as_of_month": ["2025-12"] * 5,
             "risk_probability": [0.75, 0.60, 0.59, 0.90, 0.61],
+            "risk_band": [
+                "G1_TOP_1",
+                "G2_1_TO_3",
+                "G3_3_TO_5",
+                "G4_5_TO_10",
+                "G5_REST",
+            ],
             "segment_name": ["수신중심", "거래활동중심", "저관계", "복합고관계", "저관계"],
         }
     )
@@ -343,6 +385,7 @@ def test_recommendation_uses_transparent_fallback_when_all_changes_are_null():
             "corporate_id": ["A"],
             "as_of_month": ["2025-12"],
             "risk_probability": [0.80],
+            "risk_band": ["G1_TOP_1"],
             "segment_name": ["저관계"],
         }
     )

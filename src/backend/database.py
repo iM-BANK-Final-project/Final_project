@@ -21,7 +21,12 @@ CREATE TABLE IF NOT EXISTS risk_scores (
     as_of_month TEXT NOT NULL,
     model_name TEXT NOT NULL,
     risk_probability REAL NOT NULL CHECK (risk_probability BETWEEN 0 AND 1),
-    risk_level TEXT NOT NULL,
+    risk_rank INTEGER NOT NULL,
+    risk_band TEXT NOT NULL,
+    risk_band_name TEXT NOT NULL,
+    risk_band_order INTEGER NOT NULL,
+    predicted_positive INTEGER NOT NULL CHECK (predicted_positive IN (0, 1)),
+    threshold REAL NOT NULL CHECK (threshold BETWEEN 0 AND 1),
     PRIMARY KEY (corporate_id, as_of_month, model_name),
     FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
 );
@@ -89,7 +94,12 @@ CREATE TABLE IF NOT EXISTS customer_snapshots (
     corporate_id TEXT NOT NULL,
     as_of_month TEXT NOT NULL,
     risk_probability REAL NOT NULL CHECK (risk_probability BETWEEN 0 AND 1),
-    risk_level TEXT NOT NULL,
+    risk_rank INTEGER NOT NULL,
+    risk_band TEXT NOT NULL,
+    risk_band_name TEXT NOT NULL,
+    risk_band_order INTEGER NOT NULL,
+    predicted_positive INTEGER NOT NULL CHECK (predicted_positive IN (0, 1)),
+    threshold REAL NOT NULL CHECK (threshold BETWEEN 0 AND 1),
     clv_no_risk REAL NOT NULL,
     clv_risk REAL NOT NULL,
     potential_loss REAL NOT NULL,
@@ -108,7 +118,7 @@ CREATE TABLE IF NOT EXISTS monthly_summaries (
     as_of_month TEXT PRIMARY KEY,
     managed_customer_count INTEGER NOT NULL,
     average_risk REAL NOT NULL CHECK (average_risk BETWEEN 0 AND 1),
-    high_risk_share REAL NOT NULL CHECK (high_risk_share BETWEEN 0 AND 1),
+    threshold_share REAL NOT NULL CHECK (threshold_share BETWEEN 0 AND 1),
     potential_loss_total REAL NOT NULL,
     signal_distribution_json TEXT NOT NULL
 );
@@ -117,8 +127,8 @@ CREATE TABLE IF NOT EXISTS risk_trends (
     as_of_month TEXT PRIMARY KEY,
     eligible_count INTEGER NOT NULL CHECK (eligible_count >= 0),
     average_risk REAL NOT NULL CHECK (average_risk BETWEEN 0 AND 1),
-    high_risk_count INTEGER NOT NULL CHECK (high_risk_count >= 0),
-    high_risk_share REAL NOT NULL CHECK (high_risk_share BETWEEN 0 AND 1),
+    threshold_count INTEGER NOT NULL CHECK (threshold_count >= 0),
+    threshold_share REAL NOT NULL CHECK (threshold_share BETWEEN 0 AND 1),
     model_name TEXT NOT NULL
 );
 
@@ -133,12 +143,12 @@ CREATE TABLE IF NOT EXISTS import_runs (
     error_message TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_risk_scores_month_level
-    ON risk_scores (as_of_month, risk_level);
+CREATE INDEX IF NOT EXISTS idx_risk_scores_month_band
+    ON risk_scores (as_of_month, risk_band_order);
 CREATE INDEX IF NOT EXISTS idx_snapshots_month_defense_rank
     ON customer_snapshots (as_of_month, defense_rank);
-CREATE INDEX IF NOT EXISTS idx_snapshots_month_risk_level
-    ON customer_snapshots (as_of_month, risk_level);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_risk_band
+    ON customer_snapshots (as_of_month, risk_band_order);
 CREATE INDEX IF NOT EXISTS idx_snapshots_month_segment_name
     ON customer_snapshots (as_of_month, segment_name);
 CREATE INDEX IF NOT EXISTS idx_snapshots_month_industry

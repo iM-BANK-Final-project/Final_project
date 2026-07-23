@@ -26,14 +26,23 @@ const badgeTones = {
     generated: "violet"
   },
   priority: {
+    URGENT: "coral",
     High: "coral",
     HIGH: "coral",
+    MEDIUM_HIGH: "violet",
     Medium: "amber",
     MEDIUM: "amber",
     Watch: "blue",
     WATCH: "blue",
     Low: "gray",
     LOW: "gray"
+  },
+  riskBand: {
+    G1_TOP_1: "coral",
+    G2_1_TO_3: "amber",
+    G3_3_TO_5: "violet",
+    G4_5_TO_10: "blue",
+    G5_REST: "gray"
   }
 };
 

@@ -2,12 +2,14 @@
 
 기업금융 RM이 향후 6개월의 지속거래약화 위험을 확인하고, FISIM 기반 잠재 손실에 따라 방어 대상을 정하도록 지원하는 프로젝트입니다.
 
-현재 운영 계약의 최종 근거는 다음 두 노트북입니다.
+현재 운영 계약의 최종 근거는 다음 코드와 산출물입니다.
 
-- `src/models/web_202512_m12_final_model.ipynb`: 최종 모델과 2025-12 운영 점수
+- `src/models/web_service_m12_final_scoring.py`: 최종 모델 검증과 2025-12 추론
+- `src/models/web_m12_final_scores_202512_all_3372.csv`: 전체 3,372개 점수·위험밴드·SHAP Top 10
+- `src/models/web_m12_final_risk_trend_202507_202512.csv`: 2025-07~12 동일 모델 위험 추세
 - `src/수익성F(y선정포함).ipynb`: 최종 Y, FISIM, CLV 및 방어순위
 
-구현 상세는 `financial_dormancy.md`와 `docs/superpowers/specs/2026-07-21-m12-model-clv-service-integration-design.md`에 기록합니다.
+구현 상세는 `financial_dormancy.md`와 `docs/superpowers/specs/2026-07-23-final-164-model-service-integration-design.md`에 기록합니다.
 
 ## Final Operating Target
 
@@ -32,14 +34,14 @@ D가 판정 가능하고 A/C/K 중 하나 이상이 판정 가능할 때만 `sco
 
 ## Final Model
 
-- Feature set: `FS2_R1_DACK_DYNAMIC`, 56개
+- Feature set: `FS_FINAL_164_TUNED`, 164개
 - Model: LightGBM
-- Calibration: grouped out-of-fold 예측으로 적합한 Isotonic regression
-- Final test cutoff: `2025-06` (3,346행, 양성 119행)
+- Calibration: validation에서 잠근 Platt
+- Operating threshold: `0.26479401324821045`
 - Operating cutoff: `2025-12`
 - 점수 의미: 향후 6개월 `Y_INTERVENE_M12_v2` 발생 확률
 
-점수는 실제 해지·부도·확정 휴면 확률이 아닙니다. 서비스 입력은 재학습 승인 모델로 생성한 `src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv`이며, 적격 3,341개만 포함합니다. 고객별 설명은 절대 기여도 기준 `SHAP Top 10`을 저장합니다.
+점수는 실제 해지·부도·확정 휴면 확률이 아닙니다. 서비스는 전체 3,372개가 담긴 최종 점수에서 `score_eligible=True`인 3,341개만 필터링합니다. 위험 구간은 적격 모집단 확률순위 기준 상위 1%, 1~3%, 3~5%, 5~10%, 나머지 90%의 5개 밴드이며, 고객별 설명은 절대 기여도 기준 `SHAP Top 10`을 저장합니다.
 
 ## FISIM CLV Priority
 
@@ -98,7 +100,7 @@ outputs/rm_service/rm_service.sqlite
 
 ```text
 36개월 원천 패널
-→ Y_INTERVENE_M12_v2 최종 LightGBM·Isotonic 점수
+→ Y_INTERVENE_M12_v2 최종 164피처 LightGBM·Platt 점수
 → score_eligible 적격 3,341개 필터
 → FISIM 기반 CLV_Risk·PotentialLoss
 → 방어순위 및 세그먼트 추천

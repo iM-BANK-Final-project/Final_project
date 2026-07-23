@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 
 
-MODEL_NAME = "LightGBM_Isotonic_Y_INTERVENE_M12_v2"
-TREND_MODEL_NAME = "FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC"
+MODEL_NAME = "FS_FINAL_164_TUNED_LIGHTGBM_PLATT"
+TREND_MODEL_NAME = MODEL_NAME
+MODEL_THRESHOLD = 0.26479401324821045
 VALID_GRADES = {"일반", "우수", "최우수"}
 VALID_DEDICATED = {"N", "Y"}
 SIGNAL_SOURCE_COLUMNS = {
@@ -39,8 +40,17 @@ RECOMMENDED_ACTIONS = {
     "카드": "법인카드 이용조건 점검, 한도·혜택 상담",
     "복합 거래활동": "RM 직접 접촉, 관계 회복 상담",
 }
+RISK_BAND_PRIORITIES = {
+    "G1_TOP_1": "URGENT",
+    "G2_1_TO_3": "HIGH",
+    "G3_3_TO_5": "MEDIUM_HIGH",
+    "G4_5_TO_10": "MEDIUM",
+    "G5_REST": "WATCH",
+}
 CONTACT_STRATEGIES = {
+    "URGENT": "RM 최우선 직접 접촉",
     "HIGH": "RM 우선 직접 접촉",
+    "MEDIUM_HIGH": "RM 조기 계획 접촉",
     "MEDIUM": "RM 계획 접촉",
     "WATCH": "모니터링 후 필요 시 접촉",
 }
@@ -60,6 +70,17 @@ OPERATING_SCORE_COLUMNS = (
     "CTX__업종_대분류__현재",
     "CTX__업종_중분류__현재",
     "risk_probability",
+    "risk_rank_eligible",
+    "risk_band",
+    "risk_band_name",
+    "risk_band_order",
+    "predicted_positive_model_scope",
+    "threshold",
+    "target_name",
+    "feature_set",
+    "feature_count",
+    "calibration_method",
+    "probability_status",
     *SCORE_CHANGE_COLUMNS.values(),
     *SHAP_SCORE_COLUMNS,
 )
@@ -124,7 +145,14 @@ def _normalize_boolean(series: pd.Series, label: str) -> pd.Series:
     if pd.api.types.is_bool_dtype(series):
         return series.astype(bool)
     normalized = series.astype("string").str.strip().str.lower().map(
-        {"true": True, "false": False, "1": True, "0": False}
+        {
+            "true": True,
+            "false": False,
+            "1": True,
+            "0": False,
+            "1.0": True,
+            "0.0": False,
+        }
     )
     if normalized.isna().any():
         raise ValueError(f"{label}은 true 또는 false여야 합니다.")
@@ -210,10 +238,20 @@ def _validated_risk_trends(
         raise ValueError("월별 위험 추세 고위험 비중과 고객 수가 일치하지 않습니다.")
 
     current = trend.iloc[-1]
+    threshold = pd.to_numeric(scores_month["threshold"], errors="coerce")
+    if threshold.isna().any() or not np.allclose(
+        threshold, MODEL_THRESHOLD, rtol=0, atol=1e-12
+    ):
+        raise ValueError("월별 위험 추세의 운영 임계값이 최종 모델과 일치하지 않습니다.")
     expected = {
         "eligible_count": len(scores_month),
         "average_risk": float(scores_month["risk_probability"].mean()),
-        "high_risk_count": int(scores_month["risk_probability"].ge(0.75).sum()),
+        "high_risk_count": int(
+            _normalize_boolean(
+                scores_month["predicted_positive_model_scope"],
+                "predicted_positive_model_scope",
+            ).sum()
+        ),
     }
     expected["high_risk_share"] = expected["high_risk_count"] / expected["eligible_count"]
     matches = (
@@ -227,7 +265,12 @@ def _validated_risk_trends(
     trend[["eligible_count", "high_risk_count"]] = trend[
         ["eligible_count", "high_risk_count"]
     ].astype(int)
-    return trend
+    return trend.rename(
+        columns={
+            "high_risk_count": "threshold_count",
+            "high_risk_share": "threshold_share",
+        }
+    )
 
 
 def _common_months(inputs: ServiceInputs) -> list[str]:
@@ -278,18 +321,6 @@ def _numeric_contract(
     result = frame.copy()
     result.loc[:, columns] = numeric
     return result
-
-
-def _risk_level(probability: pd.Series) -> pd.Series:
-    return pd.Series(
-        pd.cut(
-            probability,
-            bins=[-float("inf"), 0.60, 0.75, float("inf")],
-            labels=["WATCH", "MEDIUM", "HIGH"],
-            right=False,
-        ),
-        index=probability.index,
-    ).astype("string")
 
 
 def build_weakening_signals(
@@ -386,7 +417,13 @@ def build_recommendations(
     signals: pd.DataFrame,
 ) -> pd.DataFrame:
     """Build deterministic RM copy from validated risk, segment, and signals."""
-    required = ("corporate_id", "as_of_month", "risk_probability", "segment_name")
+    required = (
+        "corporate_id",
+        "as_of_month",
+        "risk_probability",
+        "risk_band",
+        "segment_name",
+    )
     _require_columns(snapshots, required, "고객 스냅샷")
     classified = classify_weakening_type(signals)
     recommendations = snapshots.loc[:, required].merge(
@@ -400,7 +437,11 @@ def build_recommendations(
     probabilities = pd.to_numeric(recommendations["risk_probability"], errors="coerce")
     if probabilities.isna().any() or probabilities.lt(0).any() or probabilities.gt(1).any():
         raise ValueError("고객 스냅샷 예측확률은 0과 1 사이여야 합니다.")
-    recommendations["priority_level"] = _risk_level(probabilities)
+    recommendations["priority_level"] = recommendations["risk_band"].map(
+        RISK_BAND_PRIORITIES
+    )
+    if recommendations["priority_level"].isna().any():
+        raise ValueError("고객 스냅샷 risk_band 허용값 위반이 있습니다.")
     recommendations["recommended_action"] = recommendations["weakening_type"].map(
         RECOMMENDED_ACTIONS
     )
@@ -558,6 +599,16 @@ def build_service_tables(
     scores_month = scores.loc[
         scores["cutoff_month"].eq(month) & scores["score_eligible"]
     ].copy()
+    model_contract = {
+        "target_name": "Y_INTERVENE_M12_v2",
+        "feature_set": "FS_FINAL_164_TUNED",
+        "feature_count": 164,
+        "calibration_method": "PLATT",
+        "probability_status": "VALIDATION_PLATT_LOCKED_SERVICE_REESTIMATION_DEFERRED",
+    }
+    for column, expected in model_contract.items():
+        if not scores_month[column].eq(expected).all():
+            raise ValueError(f"운영 점수 {column}은 {expected!r}로 고정되어야 합니다.")
     risk_trends = _validated_risk_trends(risk_trends, scores_month, month)
     clv_month = clv.loc[clv["기준월"].eq(month)].copy()
     source_month = source.loc[source["기준년월"].eq(month)].copy()
@@ -616,7 +667,20 @@ def build_service_tables(
     if not joined["전담고객여부"].isin(VALID_DEDICATED).all():
         raise ValueError("전담고객여부 허용값 위반이 있습니다.")
     joined["dedicated_yn"] = joined["전담고객여부"].map({"N": 0, "Y": 1})
-    joined["risk_level"] = _risk_level(joined["risk_probability"])
+    numeric_score_columns = (
+        "risk_rank_eligible",
+        "risk_band_order",
+        "threshold",
+    )
+    joined = _numeric_contract(joined, numeric_score_columns, "최종 위험 밴드")
+    if not joined["risk_band"].isin(RISK_BAND_PRIORITIES).all():
+        raise ValueError("운영 점수 risk_band 허용값 위반이 있습니다.")
+    if not np.allclose(joined["threshold"], MODEL_THRESHOLD, rtol=0, atol=1e-12):
+        raise ValueError("운영 점수 threshold가 최종 모델 임계값과 일치하지 않습니다.")
+    joined["predicted_positive_model_scope"] = _normalize_boolean(
+        joined["predicted_positive_model_scope"],
+        "predicted_positive_model_scope",
+    )
 
     customers = joined[
         [
@@ -636,8 +700,23 @@ def build_service_tables(
     )
     customers.insert(1, "corporate_name", customers["corporate_id"])
 
-    risk_table = joined[["법인ID", "risk_probability", "risk_level"]].rename(
-        columns={"법인ID": "corporate_id"}
+    risk_table = joined[
+        [
+            "법인ID",
+            "risk_probability",
+            "risk_rank_eligible",
+            "risk_band",
+            "risk_band_name",
+            "risk_band_order",
+            "predicted_positive_model_scope",
+            "threshold",
+        ]
+    ].rename(
+        columns={
+            "법인ID": "corporate_id",
+            "risk_rank_eligible": "risk_rank",
+            "predicted_positive_model_scope": "predicted_positive",
+        }
     )
     risk_table.insert(1, "as_of_month", month)
     risk_table.insert(2, "model_name", MODEL_NAME)
@@ -687,7 +766,12 @@ def build_service_tables(
         [
             "법인ID",
             "risk_probability",
-            "risk_level",
+            "risk_rank_eligible",
+            "risk_band",
+            "risk_band_name",
+            "risk_band_order",
+            "predicted_positive_model_scope",
+            "threshold",
             "CLV_NoRisk",
             "CLV_Risk",
             "PotentialLoss",
@@ -701,6 +785,8 @@ def build_service_tables(
     ].rename(
         columns={
             "법인ID": "corporate_id",
+            "risk_rank_eligible": "risk_rank",
+            "predicted_positive_model_scope": "predicted_positive",
             "CLV_NoRisk": "clv_no_risk",
             "CLV_Risk": "clv_risk",
             "PotentialLoss": "potential_loss",
@@ -720,7 +806,7 @@ def build_service_tables(
     if snapshots["weakening_type"].isna().any():
         raise ValueError("적격 운영 모집단의 약화 신호 분류가 없습니다.")
     weakening_type = snapshots.pop("weakening_type")
-    snapshots.insert(10, "weakening_type", weakening_type)
+    snapshots.insert(15, "weakening_type", weakening_type)
     recommendations = build_recommendations(snapshots, weakening_signals)
 
     signal_distribution = snapshots["weakening_type"].value_counts().sort_index()
@@ -730,7 +816,7 @@ def build_service_tables(
                 "as_of_month": month,
                 "managed_customer_count": int(len(snapshots)),
                 "average_risk": float(snapshots["risk_probability"].mean()),
-                "high_risk_share": float(snapshots["risk_level"].eq("HIGH").mean()),
+                "threshold_share": float(snapshots["predicted_positive"].mean()),
                 "potential_loss_total": float(snapshots["defense_value"].sum()),
                 "signal_distribution_json": json.dumps(
                     {

@@ -12,7 +12,7 @@ vi.mock("../api/client.js", () => ({ apiGet: vi.fn() }));
 const options = {
   asOfMonth: "2025-12",
   segments: ["복합고관계형"],
-  riskLevels: ["HIGH", "MEDIUM", "WATCH"],
+  riskBands: [{ value: "G2_1_TO_3", label: "상위 1~3%", order: 2 }],
   industries: [],
   regions: [],
   dedicatedOptions: [],
@@ -52,13 +52,13 @@ describe("RecommendationsPage", () => {
 
     await screen.findByText("알파코");
     fireEvent.change(screen.getByRole("combobox", { name: "위험도" }), {
-      target: { value: "HIGH" }
+      target: { value: "G2_1_TO_3" }
     });
 
     await waitFor(() =>
       expect(apiGet).toHaveBeenCalledWith(
         "/api/recommendations",
-        expect.objectContaining({ risk_level: "HIGH" }),
+        expect.objectContaining({ risk_band: "G2_1_TO_3" }),
         expect.any(AbortSignal)
       )
     );

@@ -25,10 +25,10 @@ from src.backend.m12_clv import (
 
 DEFAULT_SOURCE_PATH = Path("outputs/iM뱅크데이터_거시경제지표포함.csv")
 DEFAULT_RISK_SCORES_PATH = Path(
-    "src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv"
+    "src/models/web_m12_final_scores_202512_all_3372.csv"
 )
 DEFAULT_RISK_TRENDS_PATH = Path(
-    "src/models/web_m12_overview_risk_trend_202507_202512.csv"
+    "src/models/web_m12_final_risk_trend_202507_202512.csv"
 )
 DEFAULT_FTP_PATH = Path("outputs/iM뱅크_월별_추정FTP_2023_2025.csv")
 DEFAULT_BANK_RATES_PATH = Path("outputs/예대금리차2023~2025_순.csv")
@@ -36,6 +36,19 @@ DEFAULT_DERIVED_DIR = Path("outputs/rm_service_inputs")
 OPERATING_CUTOFF = "2025-12"
 EXPECTED_SOURCE_FIRMS = 3372
 EXPECTED_ELIGIBLE_FIRMS = 3341
+FINAL_TARGET_NAME = "Y_INTERVENE_M12_v2"
+FINAL_FEATURE_SET = "FS_FINAL_164_TUNED"
+FINAL_FEATURE_COUNT = 164
+FINAL_CALIBRATION_METHOD = "PLATT"
+FINAL_PROBABILITY_STATUS = "VALIDATION_PLATT_LOCKED_SERVICE_REESTIMATION_DEFERRED"
+FINAL_THRESHOLD = 0.26479401324821045
+FINAL_RISK_BANDS = {
+    "G1_TOP_1": ("상위 1%", 1),
+    "G2_1_TO_3": ("상위 1~3%", 2),
+    "G3_3_TO_5": ("상위 3~5%", 3),
+    "G4_5_TO_10": ("상위 5~10%", 4),
+    "G5_REST": ("나머지 90%", 5),
+}
 
 
 def _write_clv_artifact(clv: pd.DataFrame, path: Path) -> None:
@@ -62,7 +75,14 @@ def _boolean_values(series: pd.Series, label: str) -> pd.Series:
     if pd.api.types.is_bool_dtype(series):
         return series.astype(bool)
     normalized = series.astype("string").str.strip().str.lower().map(
-        {"true": True, "false": False, "1": True, "0": False}
+        {
+            "true": True,
+            "false": False,
+            "1": True,
+            "0": False,
+            "1.0": True,
+            "0.0": False,
+        }
     )
     if normalized.isna().any():
         raise ValueError(f"{label}은 true 또는 false여야 합니다.")
@@ -130,11 +150,77 @@ def filter_eligible_operating_scores(
         or not work["risk_probability"].between(0, 1).all()
     ):
         raise ValueError("운영 점수 위험확률은 0과 1 사이여야 합니다.")
+
+    metadata_contract = {
+        "target_name": FINAL_TARGET_NAME,
+        "feature_set": FINAL_FEATURE_SET,
+        "feature_count": FINAL_FEATURE_COUNT,
+        "calibration_method": FINAL_CALIBRATION_METHOD,
+        "probability_status": FINAL_PROBABILITY_STATUS,
+    }
+    present_metadata = set(metadata_contract).intersection(work.columns)
+    if present_metadata:
+        _require_columns(work, tuple(metadata_contract), "최종 164개 피처 모델 메타데이터")
+        for column, expected in metadata_contract.items():
+            if not work[column].eq(expected).all():
+                raise ValueError(f"운영 점수 {column}은 {expected!r}로 고정되어야 합니다.")
+
     eligible = work.loc[work["score_eligible"]].copy()
     if len(eligible) != expected_count or eligible["법인ID"].nunique() != expected_count:
         raise ValueError(
             f"적격 운영 모집단은 정확히 {expected_count:,}개 법인이어야 합니다."
         )
+
+    if present_metadata:
+        final_columns = (
+            "risk_rank_eligible",
+            "risk_band",
+            "risk_band_name",
+            "risk_band_order",
+            "predicted_positive_model_scope",
+            "threshold",
+            *(
+                column
+                for rank in range(1, 11)
+                for column in (f"shap_top{rank}_feature", f"shap_top{rank}_value")
+            ),
+        )
+        _require_columns(eligible, final_columns, "최종 164개 피처 운영 점수")
+        if not pd.to_numeric(eligible["threshold"], errors="coerce").sub(
+            FINAL_THRESHOLD
+        ).abs().le(1e-12).all():
+            raise ValueError("운영 점수 threshold가 최종 임계값과 일치하지 않습니다.")
+        expected_band_names = eligible["risk_band"].map(
+            {key: value[0] for key, value in FINAL_RISK_BANDS.items()}
+        )
+        expected_band_orders = eligible["risk_band"].map(
+            {key: value[1] for key, value in FINAL_RISK_BANDS.items()}
+        )
+        if expected_band_names.isna().any():
+            raise ValueError("운영 점수 risk_band에 허용되지 않은 값이 있습니다.")
+        if not eligible["risk_band_name"].eq(expected_band_names).all():
+            raise ValueError("운영 점수 risk_band_name이 risk_band와 일치하지 않습니다.")
+        if not pd.to_numeric(
+            eligible["risk_band_order"], errors="coerce"
+        ).eq(expected_band_orders).all():
+            raise ValueError("운영 점수 risk_band_order가 risk_band와 일치하지 않습니다.")
+        ranks = pd.to_numeric(eligible["risk_rank_eligible"], errors="coerce")
+        if set(ranks.dropna().astype(int)) != set(range(1, expected_count + 1)):
+            raise ValueError("운영 점수 risk_rank_eligible은 1부터 연속 순위여야 합니다.")
+        predicted = _boolean_values(
+            eligible["predicted_positive_model_scope"],
+            "predicted_positive_model_scope",
+        )
+        expected_predicted = eligible["risk_probability"].ge(FINAL_THRESHOLD)
+        if not predicted.eq(expected_predicted).all():
+            raise ValueError("운영 점수 predicted_positive_model_scope가 임계값과 다릅니다.")
+        shap_columns = [
+            column
+            for rank in range(1, 11)
+            for column in (f"shap_top{rank}_feature", f"shap_top{rank}_value")
+        ]
+        if eligible[shap_columns].isna().any().any():
+            raise ValueError("운영 점수 SHAP Top 10에 결측이 있습니다.")
     return eligible.reset_index(drop=True)
 
 

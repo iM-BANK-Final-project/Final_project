@@ -24,13 +24,17 @@ def service_database(tmp_path):
           ('C', '씨기업', '제조업', '서울', '최우수', 1);
 
         INSERT INTO customer_snapshots VALUES
-          ('A', '2025-05', .70, 'HIGH', 90, 70, 20, 20, 1,
+          ('A', '2025-05', .70, 1, 'G1_TOP_1', '상위 1%', 1, 1, .26479401324821045,
+           90, 70, 20, 20, 1,
            '복합고관계형', '입출금', '제조업', '서울', 1),
-          ('A', '2025-12', .80, 'HIGH', 100, 70, 30, 30, 1,
+          ('A', '2025-12', .80, 1, 'G1_TOP_1', '상위 1%', 1, 1, .26479401324821045,
+           100, 70, 30, 30, 1,
            '복합고관계형', '복합 거래활동', '제조업', '서울', 1),
-          ('B', '2025-12', .40, 'WATCH', -10, -8, -2, 0, NULL,
+          ('B', '2025-12', .40, 3, 'G5_REST', '나머지 90%', 5, 1, .26479401324821045,
+           -10, -8, -2, 0, NULL,
            '저거래·저수신형', '채널', '도소매', '부산', 0),
-          ('C', '2025-12', .60, 'MEDIUM', 90, 75, 15, 15, 2,
+          ('C', '2025-12', .60, 2, 'G3_3_TO_5', '상위 3~5%', 3, 1, .26479401324821045,
+           90, 75, 15, 15, 2,
            '거래·수신중심형', '카드', '제조업', '서울', 1);
 
         INSERT INTO weakening_signals VALUES
@@ -144,15 +148,15 @@ def test_overview_returns_potential_loss_total_and_trend(client):
         "asOfMonth": "2025-12",
         "managedCustomerCount": 3,
         "averageRisk": 60.0,
-        "highRiskShare": pytest.approx(33.33333333),
+        "thresholdShare": pytest.approx(33.33333333),
         "potentialLossTotal": 45.0,
         "monthlyTrend": [
-            {"month": "2025-07", "risk": 50.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
-            {"month": "2025-08", "risk": 52.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
-            {"month": "2025-09", "risk": 54.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
-            {"month": "2025-10", "risk": 56.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
-            {"month": "2025-11", "risk": 58.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": False},
-            {"month": "2025-12", "risk": 60.0, "highRiskShare": 33.33333333, "highRiskCount": 1, "eligibleCount": 3, "isCurrent": True},
+            {"month": "2025-07", "risk": 50.0, "thresholdShare": 33.33333333, "thresholdCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-08", "risk": 52.0, "thresholdShare": 33.33333333, "thresholdCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-09", "risk": 54.0, "thresholdShare": 33.33333333, "thresholdCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-10", "risk": 56.0, "thresholdShare": 33.33333333, "thresholdCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-11", "risk": 58.0, "thresholdShare": 33.33333333, "thresholdCount": 1, "eligibleCount": 3, "isCurrent": False},
+            {"month": "2025-12", "risk": 60.0, "thresholdShare": 33.33333333, "thresholdCount": 1, "eligibleCount": 3, "isCurrent": True},
         ],
         "signalSummary": [
             {"label": "복합 거래활동", "value": 1},
@@ -169,7 +173,11 @@ def test_filter_options_are_distinct_and_frontend_named(client):
     assert response.json() == {
         "asOfMonth": "2025-12",
         "segments": ["거래·수신중심형", "복합고관계형", "저거래·저수신형"],
-        "riskLevels": ["HIGH", "MEDIUM", "WATCH"],
+        "riskBands": [
+            {"value": "G1_TOP_1", "label": "상위 1%", "order": 1},
+            {"value": "G3_3_TO_5", "label": "상위 3~5%", "order": 3},
+            {"value": "G5_REST", "label": "나머지 90%", "order": 5},
+        ],
         "industries": ["도소매", "제조업"],
         "regions": ["부산", "서울"],
         "dedicatedOptions": ["N", "Y"],
@@ -192,7 +200,12 @@ def test_customers_expose_only_final_public_value_fields(client):
         "region": "서울",
         "dedicated": "Y",
         "segment": "복합고관계형",
-        "riskLevel": "HIGH",
+        "riskBand": "G1_TOP_1",
+        "riskBandName": "상위 1%",
+        "riskBandOrder": 1,
+        "riskRank": 1,
+        "predictedPositive": True,
+        "threshold": pytest.approx(26.479401324821045),
         "risk": 80.0,
         "health": 20.0,
         "clvRisk": 70.0,
@@ -219,7 +232,7 @@ def test_customers_expose_only_final_public_value_fields(client):
         ({"search": "에이"}, "A"),
         ({"search": "B"}, "B"),
         ({"segment": "복합고관계형"}, "A"),
-        ({"risk_level": "MEDIUM"}, "C"),
+        ({"risk_band": "G3_3_TO_5"}, "C"),
         ({"industry": "도소매"}, "B"),
         ({"region": "부산"}, "B"),
         ({"dedicated": "N"}, "B"),
@@ -261,8 +274,10 @@ def test_recommendations_support_filters_and_defense_order(client):
     assert [item["id"] for item in response.json()["items"]] == ["C"]
 
 
-def test_recommendations_support_risk_level_filter(client):
-    response = client.get("/api/recommendations", params={"risk_level": "MEDIUM"})
+def test_recommendations_support_risk_band_filter(client):
+    response = client.get(
+        "/api/recommendations", params={"risk_band": "G3_3_TO_5"}
+    )
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == ["C"]

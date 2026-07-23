@@ -89,9 +89,9 @@ export default function OverviewPage({ onPageChange }) {
             tone="lime"
           />
           <KpiCard
-            label="고위험 비중"
-            value={`${percentFormatter.format(overview.highRiskShare)}%`}
-            detail="고위험 고객 비중"
+            label="모델 임계값 이상"
+            value={`${percentFormatter.format(overview.thresholdShare)}%`}
+            detail="조기관리 판정 비중"
             tone="amber"
           />
           <KpiCard
@@ -109,7 +109,7 @@ export default function OverviewPage({ onPageChange }) {
           <SectionHeader
             eyebrow="Trend"
             title="월별 지속거래약화 위험"
-            description="최근 6개월 평균 위험과 고위험 고객 비중의 흐름을 확인합니다."
+            description="최근 6개월 평균 위험과 모델 임계값 이상 고객 비중의 흐름을 확인합니다."
           />
           <OverviewRiskTrendChart data={overview.monthlyTrend} />
         </article>

@@ -22,7 +22,6 @@ PRIORITY_SORT_COLUMNS = dict(CUSTOMER_SORT_COLUMNS)
 
 FILTER_OPTION_COLUMNS = {
     "segments": "segment_name",
-    "riskLevels": "risk_level",
     "industries": "industry",
     "regions": "region",
     "dedicatedOptions": "dedicated_yn",
@@ -85,7 +84,7 @@ class ServiceRepository:
             trend = connection.execute(
                 """
                 SELECT as_of_month, eligible_count, average_risk,
-                       high_risk_count, high_risk_share
+                       threshold_count, threshold_share
                 FROM risk_trends
                 WHERE as_of_month <= ?
                 ORDER BY as_of_month DESC
@@ -99,14 +98,14 @@ class ServiceRepository:
                 "asOfMonth": month,
                 "managedCustomerCount": summary["managed_customer_count"],
                 "averageRisk": summary["average_risk"] * 100,
-                "highRiskShare": summary["high_risk_share"] * 100,
+                "thresholdShare": summary["threshold_share"] * 100,
                 "potentialLossTotal": summary["potential_loss_total"],
                 "monthlyTrend": [
                     {
                         "month": row["as_of_month"],
                         "risk": round(row["average_risk"] * 100, 10),
-                        "highRiskShare": round(row["high_risk_share"] * 100, 10),
-                        "highRiskCount": row["high_risk_count"],
+                        "thresholdShare": round(row["threshold_share"] * 100, 10),
+                        "thresholdCount": row["threshold_count"],
                         "eligibleCount": row["eligible_count"],
                         "isCurrent": row["as_of_month"] == month,
                     }
@@ -134,6 +133,23 @@ class ServiceRepository:
                 return [str(row["value"]) for row in rows]
 
             options = {key: values(key) for key in FILTER_OPTION_COLUMNS}
+            band_rows = connection.execute(
+                """
+                SELECT DISTINCT risk_band, risk_band_name, risk_band_order
+                FROM customer_snapshots
+                WHERE as_of_month = ?
+                ORDER BY risk_band_order ASC
+                """,
+                (month,),
+            ).fetchall()
+            options["riskBands"] = [
+                {
+                    "value": row["risk_band"],
+                    "label": row["risk_band_name"],
+                    "order": row["risk_band_order"],
+                }
+                for row in band_rows
+            ]
             options["dedicatedOptions"] = [
                 "Y" if value == "1" else "N"
                 for value in options["dedicatedOptions"]
@@ -147,7 +163,7 @@ class ServiceRepository:
         *,
         search: str | None = None,
         segment: str | None = None,
-        risk_level: str | None = None,
+        risk_band: str | None = None,
         industry: str | None = None,
         region: str | None = None,
         dedicated: str | None = None,
@@ -157,7 +173,7 @@ class ServiceRepository:
         parameters: list[Any] = []
         fixed_filters = (
             ("s.segment_name", segment),
-            ("s.risk_level", risk_level),
+            ("s.risk_band", risk_band),
             ("s.industry", industry),
             ("s.region", region),
             ("s.dedicated_yn", None if dedicated is None else int(dedicated == "Y")),
@@ -215,7 +231,12 @@ class ServiceRepository:
             "region": row["region"],
             "dedicated": "Y" if row["dedicated_yn"] else "N",
             "segment": row["segment_name"],
-            "riskLevel": row["risk_level"],
+            "riskBand": row["risk_band"],
+            "riskBandName": row["risk_band_name"],
+            "riskBandOrder": row["risk_band_order"],
+            "riskRank": row["risk_rank"],
+            "predictedPositive": bool(row["predicted_positive"]),
+            "threshold": row["threshold"] * 100,
             "risk": risk,
             "health": 100 - risk,
             "clvRisk": row["clv_risk"],
@@ -354,7 +375,7 @@ class ServiceRepository:
         page_size: int = 50,
         segment: str | None = None,
         weakening_type: str | None = None,
-        risk_level: str | None = None,
+        risk_band: str | None = None,
         as_of_month: str | None = None,
     ) -> dict[str, Any]:
         def query(connection: sqlite3.Connection) -> dict[str, Any]:
@@ -362,7 +383,7 @@ class ServiceRepository:
             clauses, parameters = self._filters(
                 segment=segment,
                 weakening_type=weakening_type,
-                risk_level=risk_level,
+                risk_band=risk_band,
             )
             where = " AND ".join(["s.as_of_month = ?", *clauses])
             query_parameters = [month, *parameters]

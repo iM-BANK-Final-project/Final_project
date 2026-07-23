@@ -35,7 +35,12 @@ class Customer(BaseModel):
     region: str
     dedicated: str
     segment: str
-    riskLevel: str
+    riskBand: str
+    riskBandName: str
+    riskBandOrder: int
+    riskRank: int
+    predictedPositive: bool
+    threshold: float
     risk: float
     health: float
     clvRisk: float
@@ -74,8 +79,8 @@ class RecommendationPage(BaseModel):
 class MonthlyTrend(BaseModel):
     month: str
     risk: float
-    highRiskShare: float
-    highRiskCount: int
+    thresholdShare: float
+    thresholdCount: int
     eligibleCount: int
     isCurrent: bool
 
@@ -89,16 +94,22 @@ class Overview(BaseModel):
     asOfMonth: str
     managedCustomerCount: int
     averageRisk: float
-    highRiskShare: float
+    thresholdShare: float
     potentialLossTotal: float
     monthlyTrend: list[MonthlyTrend]
     signalSummary: list[SignalSummary]
 
 
+class RiskBandOption(BaseModel):
+    value: str
+    label: str
+    order: int
+
+
 class FilterOptions(BaseModel):
     asOfMonth: str
     segments: list[str]
-    riskLevels: list[str]
+    riskBands: list[RiskBandOption]
     industries: list[str]
     regions: list[str]
     dedicatedOptions: list[str]

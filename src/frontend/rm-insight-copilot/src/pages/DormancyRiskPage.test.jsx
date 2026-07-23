@@ -12,7 +12,10 @@ vi.mock("../api/client.js", () => ({ apiGet: vi.fn() }));
 const options = {
   asOfMonth: "2025-06",
   segments: ["복합고관계", "수신중심"],
-  riskLevels: ["고위험", "중위험"],
+  riskBands: [
+    { value: "G1_TOP_1", label: "상위 1%", order: 1 },
+    { value: "G2_1_TO_3", label: "상위 1~3%", order: 2 }
+  ],
   industries: [],
   regions: [],
   dedicatedOptions: [],
@@ -26,7 +29,12 @@ const customer = {
   region: "부산",
   dedicated: "N",
   segment: "수신중심",
-  riskLevel: "고위험",
+  riskBand: "G1_TOP_1",
+  riskBandName: "상위 1%",
+  riskBandOrder: 1,
+  riskRank: 1,
+  predictedPositive: true,
+  threshold: 26.5,
   risk: 81.25,
   health: 18.75,
   clvRisk: 5.5,
@@ -64,6 +72,9 @@ describe("DormancyRiskPage", () => {
       screen.getAllByText("수신중심").find((element) => element.classList.contains("status-badge"))
     ).toHaveClass("status-badge", "blue");
     expect(screen.getByText("채널")).toHaveClass("status-badge", "blue");
+    expect(
+      screen.getAllByText("상위 1%").find((element) => element.classList.contains("status-badge"))
+    ).toHaveClass("status-badge", "coral");
     expect(screen.getByRole("heading", { name: "지속거래약화 예측" })).toBeInTheDocument();
   });
 
@@ -105,7 +116,7 @@ describe("DormancyRiskPage", () => {
     );
 
     fireEvent.change(screen.getByRole("combobox", { name: "위험도" }), {
-      target: { value: "고위험" }
+      target: { value: "G1_TOP_1" }
     });
     await waitFor(() =>
       expect(apiGet).toHaveBeenCalledWith(
@@ -113,7 +124,7 @@ describe("DormancyRiskPage", () => {
         expect.objectContaining({
           search: "새봄",
           segment: "수신중심",
-          risk_level: "고위험"
+          risk_band: "G1_TOP_1"
         }),
         expect.any(AbortSignal)
       )

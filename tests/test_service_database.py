@@ -99,6 +99,19 @@ def _score_frame() -> pd.DataFrame:
             "CTX__업종_대분류__현재": ["제조업"],
             "CTX__업종_중분류__현재": ["기계"],
             "risk_probability": [0.8],
+            "risk_rank_eligible": [1],
+            "risk_band": ["G1_TOP_1"],
+            "risk_band_name": ["상위 1%"],
+            "risk_band_order": [1],
+            "predicted_positive_model_scope": [1],
+            "threshold": [0.26479401324821045],
+            "target_name": ["Y_INTERVENE_M12_v2"],
+            "feature_set": ["FS_FINAL_164_TUNED"],
+            "feature_count": [164],
+            "calibration_method": ["PLATT"],
+            "probability_status": [
+                "VALIDATION_PLATT_LOCKED_SERVICE_REESTIMATION_DEFERRED"
+            ],
             "요구불_최근3대이전9_변화율_pct": [-40.0],
             "자동이체_최근3대이전9_변화율_pct": [-35.0],
             "채널_최근3대이전9_변화율_pct": [-30.0],
@@ -136,7 +149,7 @@ def _risk_trend_frame() -> pd.DataFrame:
             "average_risk": [0.5, 0.55, 0.6, 0.65, 0.7, 0.8],
             "high_risk_count": [0, 0, 0, 0, 0, 1],
             "high_risk_share": [0, 0, 0, 0, 0, 1],
-            "model_name": ["FS2_R1_DACK_DYNAMIC_LIGHTGBM_ISOTONIC"] * 6,
+            "model_name": ["FS_FINAL_164_TUNED_LIGHTGBM_PLATT"] * 6,
         }
     )
 
@@ -179,7 +192,12 @@ def test_initialize_schema_creates_final_clv_tables_and_columns(tmp_path):
         "corporate_id",
         "as_of_month",
         "risk_probability",
-        "risk_level",
+        "risk_rank",
+        "risk_band",
+        "risk_band_name",
+        "risk_band_order",
+        "predicted_positive",
+        "threshold",
         "clv_no_risk",
         "clv_risk",
         "potential_loss",
@@ -196,8 +214,8 @@ def test_initialize_schema_creates_final_clv_tables_and_columns(tmp_path):
         "as_of_month",
         "eligible_count",
         "average_risk",
-        "high_risk_count",
-        "high_risk_share",
+        "threshold_count",
+        "threshold_share",
         "model_name",
     ]
     connection.close()
@@ -215,7 +233,8 @@ def test_schema_allows_null_defense_rank_and_shap_feature_value(tmp_path):
     )
     connection.execute(
         "INSERT INTO customer_snapshots VALUES "
-        "('A', '2025-12', .1, 'WATCH', -10, -8, -2, 0, NULL, "
+        "('A', '2025-12', .1, 1, 'G1_TOP_1', '상위 1%', 1, 0, .264, "
+        "-10, -8, -2, 0, NULL, "
         "'저거래·저수신형', '카드', '제조업', '서울', 0)"
     )
     connection.commit()

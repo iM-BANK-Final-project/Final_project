@@ -62,10 +62,42 @@ def _bank_rates() -> pd.DataFrame:
 
 def test_default_paths_point_to_final_repository_artifacts():
     assert DEFAULT_RISK_SCORES_PATH == Path(
-        "src/models/web_m12_intervene_v2_scores_202512_eligible_3341.csv"
+        "src/models/web_m12_final_scores_202512_all_3372.csv"
     )
     assert DEFAULT_FTP_PATH == Path("outputs/iM뱅크_월별_추정FTP_2023_2025.csv")
     assert DEFAULT_BANK_RATES_PATH == Path("outputs/예대금리차2023~2025_순.csv")
+
+
+def test_final_164_score_artifact_is_locked_and_filters_to_3341():
+    scores = pd.read_csv(
+        "src/models/web_m12_final_scores_202512_all_3372.csv",
+        dtype={"법인ID": "string"},
+        low_memory=False,
+    )
+
+    eligible = filter_eligible_operating_scores(scores)
+
+    assert len(eligible) == 3341
+    assert eligible["risk_band"].value_counts().to_dict() == {
+        "G5_REST": 3006,
+        "G4_5_TO_10": 167,
+        "G2_1_TO_3": 67,
+        "G3_3_TO_5": 67,
+        "G1_TOP_1": 34,
+    }
+    assert eligible["predicted_positive_model_scope"].sum() == 181
+
+
+def test_final_164_score_artifact_rejects_changed_model_metadata():
+    scores = pd.read_csv(
+        "src/models/web_m12_final_scores_202512_all_3372.csv",
+        dtype={"법인ID": "string"},
+        low_memory=False,
+    )
+    scores.loc[0, "feature_set"] = "UNEXPECTED"
+
+    with pytest.raises(ValueError, match="feature_set"):
+        filter_eligible_operating_scores(scores)
 
 
 def test_validate_source_panel_requires_complete_consecutive_36_months():

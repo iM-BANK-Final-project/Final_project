@@ -1,10 +1,14 @@
-"""Deterministic FS2 SHAP evidence rules for strategy-report generation."""
+"""Deterministic final-164 SHAP evidence rules for strategy-report generation."""
 
 import math
 from numbers import Real
+import re
 
-R1_FEATURES = (
+FEATURE_SET = "FS_FINAL_164_TUNED"
+FEATURE_COUNT = 164
+RELATIONSHIP_FEATURES = (
     "핵심거래_수준",
+    "요구불_수준",
     "수신자산_수준",
     "여신관계_수준",
     "수신상품_활성폭",
@@ -21,25 +25,10 @@ R1_FEATURES = (
     "자동이체건수_강도",
     "카드_활성률",
 )
-AXES = ("요구불", "자동이체", "채널", "카드")
-DYNAMIC_SUFFIXES = (
-    "최근3대직전3_로그차이",
-    "최근3대이전9_로그차이",
-    "H2대H1_로그차이",
-    "로그변동성",
-    "TheilSen_추세",
-    "최근3대이전9_활성률차이",
-    "월간50퍼감소횟수",
-    "월간감소율",
-    "최대연속비활성개월",
-    "현재월대직전6_로그차이",
-)
-FS2_FEATURES = R1_FEATURES + tuple(
-    f"{axis}_{suffix}" for axis in AXES for suffix in DYNAMIC_SUFFIXES
-)
 
 FEATURE_GROUPS = {
     "핵심거래_수준": "관계 폭·구성",
+    "요구불_수준": "입출금 활동",
     "수신자산_수준": "수신 관계",
     "여신관계_수준": "여신 관계",
     "수신상품_활성폭": "수신 관계",
@@ -58,6 +47,7 @@ FEATURE_GROUPS = {
 }
 BASE_FEATURE_MEANINGS = {
     "핵심거래_수준": "최근 12개월 핵심거래 활동 수준",
+    "요구불_수준": "최근 12개월 요구불 거래 수준",
     "수신자산_수준": "최근 12개월 수신자산 수준",
     "여신관계_수준": "최근 12개월 여신관계 수준",
     "수신상품_활성폭": "최근 12개월 수신상품 활성 폭",
@@ -75,23 +65,14 @@ BASE_FEATURE_MEANINGS = {
     "카드_활성률": "카드 활동월 비율",
 }
 DYNAMIC_AXIS_GROUPS = {
-    "요구불": "입출금 활동",
-    "자동이체": "자동이체",
-    "채널": "채널 이용",
-    "카드": "카드 관계",
+    "D": "입출금 활동",
+    "A": "자동이체",
+    "C": "채널 이용",
+    "K": "카드 관계",
 }
-SUFFIX_MEANINGS = {
-    "최근3대직전3_로그차이": "최근 3개월과 직전 3개월 비교",
-    "최근3대이전9_로그차이": "최근 3개월과 이전 9개월 비교",
-    "H2대H1_로그차이": "최근 반기와 앞선 반기 비교",
-    "로그변동성": "최근 12개월 활동 변동성",
-    "TheilSen_추세": "최근 12개월 강건 추세",
-    "최근3대이전9_활성률차이": "활동월 빈도 변화",
-    "월간50퍼감소횟수": "최근 12개월 월간 50% 이상 감소 횟수",
-    "월간감소율": "전월보다 감소한 월의 비율",
-    "최대연속비활성개월": "최장 연속 비활성 기간",
-    "현재월대직전6_로그차이": "현재월과 직전 6개월 평균 비교",
-}
+AXIS_FAMILY_PATTERN = re.compile(r"^(DACK|EXP_DIFF|EXP_PATH)__(D|A|C|K)__(.+)$")
+CROSS_PATTERN = re.compile(r"^EXP_CROSS__(.+)$")
+KM_PATTERN = re.compile(r"^EXP_KM__(.+)$")
 
 
 def prepare_shap_report_evidence(shap_factors: list[dict]) -> dict:
@@ -104,8 +85,9 @@ def prepare_shap_report_evidence(shap_factors: list[dict]) -> dict:
         if not isinstance(factor, dict):
             raise ValueError("Each SHAP factor must be a dictionary.")
         feature = factor.get("feature")
-        if feature not in FS2_FEATURES:
-            raise ValueError("SHAP feature must belong to FS2_R1_DACK_DYNAMIC.")
+        if not isinstance(feature, str):
+            raise ValueError("SHAP feature must be a non-empty string.")
+        _feature_context(feature)
 
         rank = factor.get("rank")
         if not isinstance(rank, int) or isinstance(rank, bool):
@@ -145,8 +127,8 @@ def prepare_shap_report_evidence(shap_factors: list[dict]) -> dict:
         grouped_items.setdefault(group, []).append(item)
 
     return {
-        "featureSet": "FS2_R1_DACK_DYNAMIC",
-        "featureCount": len(FS2_FEATURES),
+        "featureSet": FEATURE_SET,
+        "featureCount": FEATURE_COUNT,
         "localShapTop10": local_shap_top10,
         "groupedSignals": [
             _group_summary(group, items, total_absolute_shap)
@@ -158,8 +140,28 @@ def prepare_shap_report_evidence(shap_factors: list[dict]) -> dict:
 def _feature_context(feature: str) -> tuple[str, str]:
     if feature in FEATURE_GROUPS:
         return FEATURE_GROUPS[feature], BASE_FEATURE_MEANINGS[feature]
-    axis, suffix = feature.split("_", maxsplit=1)
-    return DYNAMIC_AXIS_GROUPS[axis], SUFFIX_MEANINGS[suffix]
+    axis_match = AXIS_FAMILY_PATTERN.fullmatch(feature)
+    if axis_match:
+        family, axis, signal = axis_match.groups()
+        family_meaning = {
+            "DACK": "최근 거래활동 변화",
+            "EXP_DIFF": "월별 변화·가속도",
+            "EXP_PATH": "거래 경로·하락 지속성",
+        }[family]
+        return DYNAMIC_AXIS_GROUPS[axis], f"{family_meaning}: {_readable_signal(signal)}"
+    cross_match = CROSS_PATTERN.fullmatch(feature)
+    if cross_match:
+        return "축간 결합 신호", f"거래축 간 결합 변화: {_readable_signal(cross_match.group(1))}"
+    km_match = KM_PATTERN.fullmatch(feature)
+    if km_match:
+        return "관계 패턴 위치", f"고객 관계 패턴 위치: {_readable_signal(km_match.group(1))}"
+    raise ValueError(
+        "SHAP feature must belong to FS_FINAL_164_TUNED approved families."
+    )
+
+
+def _readable_signal(signal: str) -> str:
+    return signal.replace("__", " / ").replace("_", " ")
 
 
 def _impact_direction(impact: float) -> str:

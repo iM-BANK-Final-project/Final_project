@@ -52,7 +52,8 @@ docs/
 
 # output
 *.csv
-!src/models/web_m12_overview_risk_trend_202507_202512.csv
+!src/models/web_m12_final_scores_202512_all_3372.csv
+!src/models/web_m12_final_risk_trend_202507_202512.csv
 *.png
 *.svg
 *.pdf

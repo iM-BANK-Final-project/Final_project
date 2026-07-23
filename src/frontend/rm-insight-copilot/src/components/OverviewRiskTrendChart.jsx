@@ -12,7 +12,7 @@ export default function OverviewRiskTrendChart({ data }) {
   const plotBottom = 180;
   const step = width / data.length;
   const xAt = (index) => step * index + step / 2;
-  const maxShare = Math.max(...data.map((item) => item.highRiskShare), 0.1);
+  const maxShare = Math.max(...data.map((item) => item.thresholdShare), 0.1);
   const risks = data.map((item) => item.risk);
   const riskMin = Math.min(...risks);
   const riskMax = Math.max(...risks);
@@ -27,7 +27,7 @@ export default function OverviewRiskTrendChart({ data }) {
     <div className="overview-risk-trend" role="group" aria-label="월별 지속거래약화 위험 추세">
       <div className="risk-trend-legend" aria-label="차트 범례">
         <span><i className="legend-line" aria-hidden="true" />평균 위험</span>
-        <span><i className="legend-bar" aria-hidden="true" />고위험 고객 비중</span>
+        <span><i className="legend-bar" aria-hidden="true" />모델 임계값 이상 비중</span>
       </div>
 
       <svg className="risk-trend-plot" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
@@ -36,7 +36,7 @@ export default function OverviewRiskTrendChart({ data }) {
           return <line className="risk-trend-gridline" key={line} x1="0" x2={width} y1={y} y2={y} />;
         })}
         {data.map((item, index) => {
-          const barHeight = Math.max((item.highRiskShare / maxShare) * 112, 8);
+          const barHeight = Math.max((item.thresholdShare / maxShare) * 112, 8);
           return (
             <rect
               className={`risk-trend-bar${item.isCurrent ? " is-current" : ""}`}
@@ -67,11 +67,11 @@ export default function OverviewRiskTrendChart({ data }) {
             <span className="risk-trend-month">{item.month.slice(5)}월</span>
             {item.isCurrent && <small className="current-label">현재 기준</small>}
             <strong>{percentFormatter.format(item.risk)}%</strong>
-            <small>고위험 {percentFormatter.format(item.highRiskShare)}% · {item.highRiskCount.toLocaleString("ko-KR")}명</small>
+            <small>임계값 이상 {percentFormatter.format(item.thresholdShare)}% · {item.thresholdCount.toLocaleString("ko-KR")}명</small>
           </div>
         ))}
       </div>
-      <p className="risk-trend-note">동일 모델로 월별 재산출했으며, 고위험은 위험확률 75% 이상입니다.</p>
+      <p className="risk-trend-note">동일 모델의 운영 임계값 26.5% 이상 판정 비중입니다.</p>
     </div>
   );
 }

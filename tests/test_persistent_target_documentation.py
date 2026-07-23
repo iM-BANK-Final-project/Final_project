@@ -37,14 +37,21 @@ class PersistentTargetDocumentationTest(unittest.TestCase):
             self.assertNotIn("0.2959", text, path)
             self.assertNotIn("75.5%", text, path)
 
-    def test_active_docs_name_the_eligible_top10_operating_artifact(self):
+    def test_active_docs_name_the_final_164_operating_artifacts(self):
         for path in ACTIVE_DOCS:
             text = path.read_text(encoding="utf-8")
             self.assertIn(
-                "web_m12_intervene_v2_scores_202512_eligible_3341.csv",
+                "web_m12_final_scores_202512_all_3372.csv",
                 text,
                 path,
             )
+            self.assertIn(
+                "web_m12_final_risk_trend_202507_202512.csv",
+                text,
+                path,
+            )
+            self.assertIn("FS_FINAL_164_TUNED", text, path)
+            self.assertIn("Platt", text, path)
             self.assertIn("SHAP Top 10", text, path)
 
     def test_active_docs_describe_gemini_generation_and_ephemeral_pdf(self):

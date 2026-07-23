@@ -12,12 +12,12 @@ export default function DormancyRiskPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState("");
-  const [riskLevel, setRiskLevel] = useState("");
+  const [riskBand, setRiskBand] = useState("");
   const optionsState = useApi("/api/filter-options");
   const customersState = useApi("/api/customers", {
     search,
     segment,
-    risk_level: riskLevel
+    risk_band: riskBand
   });
 
   useEffect(() => {
@@ -53,12 +53,12 @@ export default function DormancyRiskPage() {
         </select>
         <select
           aria-label="위험도"
-          value={riskLevel}
-          onChange={(event) => setRiskLevel(event.target.value)}
+          value={riskBand}
+          onChange={(event) => setRiskBand(event.target.value)}
         >
           <option value="">위험도 전체</option>
-          {(options?.riskLevels ?? []).map((option) => (
-            <option key={option} value={option}>{option}</option>
+          {(options?.riskBands ?? []).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
       </div>
@@ -89,6 +89,9 @@ export default function DormancyRiskPage() {
                   <ExpandableText text={customer.id} label="법인ID" lines={2} />
                   <StatusBadge kind="segment" value={customer.segment}>
                     {customer.segment}
+                  </StatusBadge>
+                  <StatusBadge kind="riskBand" value={customer.riskBand}>
+                    {customer.riskBandName}
                   </StatusBadge>
                 </small>
               </div>

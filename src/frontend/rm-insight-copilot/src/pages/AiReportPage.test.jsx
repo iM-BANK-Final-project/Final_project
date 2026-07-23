@@ -16,7 +16,7 @@ vi.mock("../api/client.js", () => ({
 const options = {
   asOfMonth: "2025-06",
   segments: [],
-  riskLevels: [],
+  riskBands: [],
   industries: [],
   regions: [],
   dedicatedOptions: [],

@@ -50,9 +50,9 @@ def report_context() -> dict:
                     "여신세부상품_활성폭",
                     "채널_활성폭",
                     "관계영역_활성폭",
-                    "요구불_최근3대직전3_로그차이",
-                    "자동이체_TheilSen_추세",
-                    "카드_현재월대직전6_로그차이",
+                    "DACK__D__최근3_직전3_로그차이",
+                    "EXP_DIFF__A__half_slope_acceleration",
+                    "EXP_PATH__K__longest_decline_run",
                 ],
                 start=1,
             )
@@ -97,8 +97,8 @@ def test_generate_strategy_report_uses_evidence_and_validates_narrative():
     assert result.riskSummary == "조기 점검이 필요합니다."
     call = client.models.calls[0]
     assert call["model"]
-    assert '"featureSet": "FS2_R1_DACK_DYNAMIC"' in call["contents"]
-    assert '"featureCount": 56' in call["contents"]
+    assert '"featureSet": "FS_FINAL_164_TUNED"' in call["contents"]
+    assert '"featureCount": 164' in call["contents"]
     assert '"rank": 10' in call["contents"]
     assert '"groupedSignals"' in call["contents"]
     assert "같은 그룹의 유사 피처는 하나의 종합 신호" in call["contents"]
