@@ -35,6 +35,7 @@ data/private/
 *.xlsx
 *.xls
 *.pptx
+*.docx
 *.ndjson
 *.csv
 *.tsv
