@@ -1,74 +1,142 @@
+import { useState } from "react";
+
+import ExpandableText from "../components/ExpandableText.jsx";
+import AmountUnit from "../components/AmountUnit.jsx";
+import { EmptyState, ErrorState, LoadingState } from "../components/PageState.jsx";
 import SectionHeader from "../components/SectionHeader.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
-import { customers } from "../data/mockData.js";
+import { useApi } from "../hooks/useApi.js";
 
-export default function PriorityPage() {
-  const sortedCustomers = [...customers].sort((a, b) => b.expectedLoss - a.expectedLoss);
+const percentFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
+const scoreFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
+
+export default function PriorityPage({ onRecommendationOpen }) {
+  const [industry, setIndustry] = useState("");
+  const [region, setRegion] = useState("");
+  const [dedicated, setDedicated] = useState("");
+  const [weakeningType, setWeakeningType] = useState("");
+  const [segment, setSegment] = useState("");
+  const optionsState = useApi("/api/filter-options");
+  const prioritiesState = useApi("/api/priorities", {
+    industry,
+    region,
+    dedicated,
+    weakening_type: weakeningType,
+    segment
+  });
+
+  const options = optionsState.data;
+  const customers = prioritiesState.data?.items ?? [];
+  const loading = optionsState.loading || prioritiesState.loading;
+  const error = optionsState.error || prioritiesState.error;
 
   return (
     <main className="page">
       <SectionHeader
         eyebrow="CRM Priority"
-        title="기대손실 기반 CRM 우선순위"
-        description="금융관계 약화 위험과 고객가치 대리지표를 결합해 먼저 볼 고객을 정렬합니다. 현재 수치는 예시 데이터입니다."
+        title="FISIM CLV 기반 관리 우선순위"
+        description="PotentialLoss가 양수인 고객을 방어순위로 정렬해 먼저 관리할 대상을 확인합니다."
       />
       <div className="filter-bar">
-        <select defaultValue="교육 및 서비스">
-          <option>교육 및 서비스</option>
-          <option>제조</option>
-          <option>도소매</option>
+        <select aria-label="업종" value={industry} onChange={(event) => setIndustry(event.target.value)}>
+          <option value="">전체 업종</option>
+          {(options?.industries ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
         </select>
-        <select defaultValue="대구">
-          <option>대구</option>
-          <option>서울</option>
-          <option>경기</option>
+        <select aria-label="지역" value={region} onChange={(event) => setRegion(event.target.value)}>
+          <option value="">전체 지역</option>
+          {(options?.regions ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
         </select>
-        <select defaultValue="Y">
-          <option>Y</option>
-          <option>N</option>
+        <select aria-label="전담여부" value={dedicated} onChange={(event) => setDedicated(event.target.value)}>
+          <option value="">전담여부 전체</option>
+          {(options?.dedicatedOptions ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
         </select>
-        <select defaultValue="상품관계폭 축소">
-          <option>상품관계폭 축소</option>
-          <option>외환거래 감소</option>
-          <option>예금잔액 약화</option>
+        <select aria-label="약화유형" value={weakeningType} onChange={(event) => setWeakeningType(event.target.value)}>
+          <option value="">약화유형 전체</option>
+          {(options?.weakeningTypes ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+        <select aria-label="세그먼트" value={segment} onChange={(event) => setSegment(event.target.value)}>
+          <option value="">전체 세그먼트</option>
+          {(options?.segments ?? []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
         </select>
       </div>
-      <div className="table-panel">
-        <table>
+      {loading && <LoadingState />}
+      {error && (
+        <ErrorState
+          error={error}
+          onRetry={() => {
+            optionsState.retry();
+            prioritiesState.retry();
+          }}
+        />
+      )}
+      {!loading && !error && customers.length === 0 && (
+        <EmptyState message="조건에 맞는 관리 대상이 없습니다." />
+      )}
+      <div className="table-panel priority-table-panel">
+        <div className="amount-unit-row table-unit-row">
+          <AmountUnit />
+        </div>
+        <table className="priority-table">
+          <colgroup>
+            {[6, 11, 12, 10, 8, 5, 10, 10, 10, 11, 7].map((width, index) => (
+              <col key={index} style={{ width: `${width}%` }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th>순위</th>
+              <th>방어순위</th>
               <th>법인ID</th>
               <th>기업명</th>
               <th>업종</th>
               <th>지역</th>
               <th>전담</th>
-              <th>휴면위험</th>
-              <th>고객가치</th>
-              <th>기대손실</th>
+              <th>지속거래약화 위험</th>
+              <th>CLV_Risk</th>
+              <th>PotentialLoss</th>
               <th>주요 약화 유형</th>
               <th>액션</th>
             </tr>
           </thead>
           <tbody>
-            {sortedCustomers.map((customer, index) => (
+            {customers.map((customer) => (
               <tr key={customer.id}>
-                <td>{index + 1}</td>
-                <td>{customer.id}</td>
-                <td><strong>{customer.name}</strong></td>
+                <td>{customer.defenseRank ?? "-"}</td>
+                <td><ExpandableText text={customer.id} label="법인ID" /></td>
+                <td><strong><ExpandableText text={customer.name} label="기업명" /></strong></td>
                 <td>{customer.industry}</td>
                 <td>{customer.region}</td>
                 <td>{customer.dedicated}</td>
-                <td>{customer.risk}%</td>
-                <td>{customer.valueProxy}</td>
-                <td>{customer.expectedLoss.toLocaleString()}백만원</td>
-                <td><StatusBadge tone="mint">{customer.weakeningType}</StatusBadge></td>
-                <td><button className="mini-button">추천 보기</button></td>
+                <td>{percentFormatter.format(customer.risk)}%</td>
+                <td>{scoreFormatter.format(customer.clvRisk)}</td>
+                <td>{scoreFormatter.format(customer.potentialLoss)}</td>
+                <td>
+                  <StatusBadge kind="weakening" value={customer.weakeningType}>
+                    {customer.weakeningType}
+                  </StatusBadge>
+                </td>
+                <td>
+                  <button className="mini-button" onClick={() => onRecommendationOpen(customer.id)}>
+                    추천 보기
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <small className="report-note">
+        최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
+      </small>
     </main>
   );
 }

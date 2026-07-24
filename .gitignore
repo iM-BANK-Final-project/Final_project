@@ -34,6 +34,9 @@ data/raw/
 data/private/
 *.xlsx
 *.xls
+*.pptx
+*.docx
+*.ndjson
 *.csv
 *.tsv
 *.parquet
@@ -44,3 +47,18 @@ data/private/
 *.log
 logs/
 
+.superpowers
+
+docs/
+
+# output
+*.csv
+!src/models/web_m12_final_scores_202512_all_3372.csv
+!src/models/web_m12_final_risk_trend_202507_202512.csv
+*.png
+*.svg
+*.pdf
+*.joblib
+*.json
+!/package.json
+!/package-lock.json

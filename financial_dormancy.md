@@ -1,149 +1,121 @@
-# 지속거래약화 예측 및 CRM 설계서
+# M12 지속거래약화 예측 및 CRM 운영 설계
 
-> 상태: 최종 Y 확정, 이벤트 라벨 구현 완료, 예측 모델 재설계 대기  
-> 기준일: 2026-07-13  
-> Y 근거: `y_setting_pipeline.md`
+> 상태: 최종 Y·모델·FISIM CLV 서비스 계약 확정  
+> 기준일: 2026-07-23
+> 최종 근거: `src/models/web_service_m12_final_scoring.py`, `src/models/web_m12_final_scores_202512_all_3372.csv`, `src/수익성F(y선정포함).ipynb`
 
-## 1. 목적
+## 1. 목적과 모집단
 
-기업금융 RM이 법인고객의 지속적인 거래관계 약화를 발견하고, 고객가치와 결합해 관리 순서와 접촉 전략을 정하도록 지원한다. 이 문서는 프로젝트의 단일 기준 설계 문서다.
+기업금융 RM이 향후 6개월의 지속거래약화 가능성을 조기에 확인하고, 방어 가능한 경제적 기여가치가 큰 법인을 우선 관리하도록 지원한다.
 
-최종 Y는 실제 해지나 법적 의미의 이탈이 아니라 36개월 완전관측 법인의 거래 시계열에서 관측되는 **지속거래약화 proxy**다.
+- 원천 기간: 2023-01~2025-12
+- 완전관측 법인: 3,372개, 법인별 36개월
+- 운영 기준월: 2025-12
+- 서비스 노출: `score_eligible=True`인 3,341개
+- 부적격 31개: DB·API·KPI·필터·UI에서 제외하며 Y=0으로 대체하지 않음
 
-## 2. 분석 코호트
+## 2. 최종 Y
 
-- 기간: 2023-01~2025-12
-- 대상: 36개월이 모두 관측된 법인 3,372개
-- 법인별 고객-월은 중복 없이 정확히 36개이며 월이 연속되어야 한다.
-- 관측되지 않은 고객-월과 결측 금액을 0으로 보충하지 않는다.
-- 완전관측 코호트 결과를 신규·단기·관측중단 법인이나 전체 모집단으로 확대 해석하지 않는다.
-
-## 3. 최종 Y
-
-최종 Y는 `Y_지속거래약화_3M70`이다.
+최종 배포 target은 `Y_INTERVENE_M12_v2`다.
 
 ```text
-입출금활동금액 = 요구불입금금액 + 요구불출금금액
+D = 요구불입금금액 + 요구불출금금액
+A = 자동이체금액
+C = 창구거래금액 + 인터넷뱅킹거래금액 + 스마트뱅킹거래금액
+    + 폰뱅킹거래금액 + ATM거래금액
+K = 신용카드사용금액 + 체크카드사용금액
 
-채널활동금액 = 창구거래금액
-                + 인터넷뱅킹거래금액
-                + 스마트뱅킹거래금액
-                + 폰뱅킹거래금액
-                + ATM거래금액
+ONSET_g   = c+1, c+2, c+3 각 월의 전년동월비 < 0.60
+PERSIST_g = mean(c+4:c+6) / mean(c-11:c) < 0.70
+W_g       = ONSET_g AND PERSIST_g
 
-카드활동금액 = 신용카드사용금액 + 체크카드사용금액
-
-핵심거래활동금액 = 입출금활동금액
-                    + 채널활동금액
-                    + 카드활동금액
+Y_INTERVENE_M12_v2 = W_D AND (W_A OR W_C OR W_K)
 ```
 
-법인별 월 `t`의 YoY는 다음과 같다.
+ONSET 전년동월 분모 또는 PERSIST 과거 12개월 평균이 0이면 그 축은 판정 불가능하다. 전체 target은 D가 판정 가능하고 A/C/K 중 하나 이상이 판정 가능할 때만 적격이다.
+
+롤링 target lock은 전체 64,068행, 적격 63,572행, 양성 1,966행, 적격 법인 3,354개, 양성 법인 639개다.
+
+과거 `Y_지속거래약화_3M70`은 Y 탐색 근거로 보존하는 사후 first-event 라벨이다. 현재 운영 target이 아니며 그 기반의 과거 모델 성능도 현재 모델 성능으로 제시하지 않는다.
+
+## 3. 최종 모델
+
+- Feature set: `FS_FINAL_164_TUNED`, 164개
+- Model: LightGBM
+- Calibration: validation에서 잠근 Platt
+- 운영 임계값: `0.26479401324821045`
+- 확률 상태: `VALIDATION_PLATT_LOCKED_SERVICE_REESTIMATION_DEFERRED`
+- 서비스 점수: `src/models/web_m12_final_scores_202512_all_3372.csv`, 전체 3,372개 중 적격 3,341개
+- 월별 추세: `src/models/web_m12_final_risk_trend_202507_202512.csv`
+- 위험 밴드: 적격 확률순위 기준 상위 1%, 1~3%, 3~5%, 5~10%, 나머지 90%
+- 임계값 이상: 적격 181개
+- 로컬 설명: 고객별 절대 기여도 기준 `SHAP Top 10`, DB 총 33,410행
+
+업종과 세그먼트 식별자는 모델 입력이 아니라 설명 및 안정성 점검용이다. `risk_probability`는 향후 6개월 `Y_INTERVENE_M12_v2` 발생 확률이며 해지·부도·확정 휴면 확률이 아니다.
+
+## 4. FISIM
 
 ```text
-핵심거래_YoY_ratio(t)
-= 핵심거래활동금액(t) / 핵심거래활동금액(t-12)
+L  = 여신_운전자금대출잔액 + 여신_시설자금대출잔액
+DS = 거치식예금잔액 + 적립식예금잔액
+DR = 요구불예금잔액
 
-drop50(t) = 핵심거래_YoY_ratio(t) < 0.50
+V_FTP(i,m) = L  × (기업대출금리_m - FTP_m)
+           + DS × (FTP_m - 저축성수신금리_m)
+           + DR × (FTP_m - 0.0001)
 ```
 
-전년 동월 값이 0이거나 필수 금액이 결측이면 해당 월은 판정 불가능이다. `ratio=0.50`은 drop50이 아니다.
+- 은행 월별 금리는 백분율이므로 100으로 한 번 나눈다.
+- FTP는 이미 월별 decimal이므로 다시 변환하지 않는다.
+- 월말 잔액을 직접 사용하고 월평잔·일수 연환산을 사용하지 않는다.
+- 역마진 진단을 위해 음수 FISIM을 보존한다.
+- D/A/C/K 활동, 업종, 세그먼트는 직접 FISIM 입력이 아니다.
 
-`drop50=1`이 3개월 연속인 구간의 세 번째 달을 이벤트월로 정의한다. 법인별로 이 조건을 처음 충족한 월만 이벤트로 사용하며, 같은 연속 구간의 네 번째 이후 달과 회복 후 재발 구간은 새 사건으로 세지 않는다.
+## 5. CLV와 방어순위
+
+2025-12 기준 가치 기초는 최근 실제 6개월인 2025-07~2025-12 월별 FISIM 합계다. 미래 잔액·2026년 수익성과 생존확률은 예측하지 않는다.
 
 ```text
-baseline12 = 이벤트월 직전 12개월(t-12~t-1) 평균
-future3 = 이벤트월 직후 3개월(t+1~t+3) 평균
-future3_to_baseline = future3 / baseline12
-
-Y_지속거래약화_3M70 = 1
-if
-drop50이 3개월 연속 발생
-AND
-future3_to_baseline < 0.70
+CLV_NoRisk = Σ actual_FISIM_m, m=2025-07..2025-12
+CLV_Risk = CLV_NoRisk / (1+p)
+PotentialLoss = CLV_NoRisk - CLV_Risk
+defense_value = max(PotentialLoss, 0)
 ```
 
-이벤트월은 baseline12와 future3에 포함하지 않는다. `future3_to_baseline=0.70`은 Y=0이며, 미래 3개월 부족 또는 분모·금액 판정 불가능은 Y 결측이다. 사건 ID는 `법인ID+이벤트월`이다.
+`defense_value > 0`인 고객만 방어순위를 갖는다. 정렬은 `defense_value desc`, `risk_probability desc`, `CLV_NoRisk desc`, `corporate_id asc` 순서다.
 
-## 4. 선정 근거
+DB에는 `CLV_NoRisk`, `CLV_Risk`, `PotentialLoss`, `defense_value`, nullable `defense_rank`를 저장한다. UI 고객가치 영역에는 `CLV_Risk`와 `PotentialLoss`만 표시하며 `CLV_NoRisk`는 표시하지 않는다. `PotentialLoss`는 확정 회계손실이 아니다.
 
-- 1개월 drop50 경험 법인은 78.26%로 단발 변동이 너무 많이 포함된다.
-- 3개월 연속 drop50 경험 법인은 834개(24.73%)다.
-- 3개월 연속 이벤트 중 이후 3개월도 기준선 70% 미만인 최종 양성은 516개(15.30%)다.
-- 연속 감소와 이후 회복 실패를 함께 요구해 일시적인 저점을 줄인다.
-- 업종 BSI 충격 구간에서 거래약화 발생률 lift가 관측됐으나 외부지표는 Y 조건이 아니라 경제적 타당성 보강에만 사용한다.
+과거 고객가치 대리점수와 `risk_probability × customer_value_proxy` 우선순위는 폐기했다.
 
-## 5. 기존 Y의 지위
-
-수신·여신·입출금·카드·자동이체 중 3축 이상 감소를 사용한 과거 라벨은 최종 Y가 아니다. 해당 라벨로 계산한 모델 성능도 현재 프로젝트 성과로 사용하지 않는다.
-
-수신, 여신, 외환, 자동이체, 상품관계폭은 최종 Y 판정식에 포함하지 않는다. 향후 예측 모델의 입력 또는 원인 설명축으로 사용할 수 있지만 기준월 이후 정보는 feature에 포함할 수 없다.
-
-## 6. 구현 계약
+## 6. 서비스 계약
 
 ```text
-src/preprocessing/persistent_transaction_weakening_labels.py
-src/preprocessing/run_persistent_transaction_weakening_labels.py
-outputs/persistent_transaction_weakening_labels/
+최종 점수 CSV
+→ score_eligible=True 3,341개 검증
+→ 월별 FISIM 및 최근 실제 6개월 위험조정 CLV 계산
+→ 고객·위험·CLV·신호·세그먼트·SHAP·추천 테이블 생성
+→ 임시 SQLite 검증 후 원자적 교체
+→ FastAPI 조회
+→ React 화면
 ```
 
-주요 출력은 법인×월 패널과 이벤트 테이블이다.
+API 고객 응답은 `riskBand`, `riskBandName`, `riskBandOrder`, `riskRank`, `predictedPositive`, `threshold`, `clvRisk`, `potentialLoss`, `defenseRank`를 제공한다. 우선순위 기본 정렬은 `defenseRank`이며 null 순위는 양수 방어대상 뒤에 둔다. Overview는 모델 임계값 기준 `thresholdShare`·`thresholdCount`와 양수 잠재손실 합계인 `potentialLossTotal`을 반환한다.
 
-```text
-법인ID, 기준년월
-입출금활동금액, 채널활동금액, 카드활동금액, 핵심거래활동금액
-핵심거래_YoY_ratio, drop50, drop50_연속개월수, core_3m_event
-이벤트이전12개월평균, 이벤트이후3개월평균, future3_to_baseline
-Y_지속거래약화_3M70, 지속거래약화사건ID
-```
+필터는 업종, 지역, 전담여부, 약화유형, 세그먼트를 유지한다. UI에는 다음 해석 문구를 표시한다.
 
-## 7. 모델링 게이트
+> 최근 6개월 실제 FISIM을 위험확률로 조정한 경제적 기여가치 추정치이며 확정 회계손실이 아닙니다.
 
-현재 구현된 이벤트 Y는 이벤트 발생 후 3개월을 확인하는 사후 확정 라벨이다. 승인된 모델링 target은 기준월 `t`의 `t+1~t+3`에 최종 양성 사건이 존재하는지를 나타내는 `Y_향후3개월_지속거래약화`다.
+### Gemini AI 보고서·PDF
 
-모델링 시 다음을 지킨다.
+`POST /api/reports/{corporate_id}/generate`는 적격 3,341개 고객의 사전 계산 위험, `CLV_Risk`, `PotentialLoss`, D/A/C/K, `SHAP Top 10`, 추천 근거를 `GEMINI_API_KEY` 또는 Vertex AI로 전달해 6개 서술 섹션을 생성한다. 수치와 SHAP은 백엔드가 그대로 결합하며 Gemini가 재생성하지 않는다.
 
-- `X_t`는 기준월 `t` 이하 정보만 사용한다.
-- 사후 확인용 future3 값은 feature에서 제외한다.
-- 법인별 최초 최종 양성 사건월과 그 이후 기준월은 신규 조기경고 위험집단에서 제외한다.
-- 전체 feature와 직접 약화 신호 3개를 제거한 feature를 Logistic Regression과 고정 LightGBM에서 비교한다.
-- 시간 기반 train/validation/test와 관찰창에 맞는 embargo를 사용한다.
-- PR-AUC, Top-K 사건 recall, lift와 세그먼트 안정성을 평가한다.
-- 새 Y로 실제 재학습한 결과만 기록한다.
+`POST /api/reports/{corporate_id}/pdf`는 현재 화면의 보고서를 DB 근거와 대조한 후 `RM_REPORT_FONT_PATH` 또는 OS 한국어 폰트를 포함한 A4 PDF로 반환한다. AI 보고서와 PDF는 DB에 저장하지 않는다.
 
-## 8. 서비스 흐름
+## 7. 데이터·누수·표현 원칙
 
-```text
-36개월 완전관측 코호트 검증
-→ Y_지속거래약화_3M70 이벤트 라벨
-→ rolling 조기예측 target 별도 승인
-→ 지속거래약화 예측
-→ 고객가치 대리지표 결합
-→ CRM 관리 우선순위
-→ 세그먼트 기반 맞춤 추천
-→ SHAP/차트 기반 AI 전략 보고서
-```
-
-## 9. 고객가치 및 CRM
-
-```text
-고객가치 대리지표
-= 정규화된 수신 + 여신 + 거래성금액 + 상품관계폭 + 고객등급 + 전담여부
-
-CRM 관리 우선순위 점수
-= 검증된 지속거래약화 위험 × 고객가치 대리지표
-```
-
-이 점수는 실제 손실액이 아니라 RM의 관리 순서를 정하기 위한 운영 점수다. 업종, 지역, 전담여부, 약화유형, 세그먼트 필터를 제공한다.
-
-## 10. 표현 원칙
-
-권장 표현은 “지속거래약화 가능성”, “금융관계 약화 위험”, “조기관리 필요”, “추천 접촉 전략”이다. “실제 해지 고객”, “확정 휴면 고객”, “회계상 확정 손실”로 표현하지 않는다.
-
-## 11. 다음 우선순위
-
-1. 실제 원천 데이터로 새 이벤트 라벨 재생성 및 516개·15.30% 재현 확인
-2. 월별·업종별·지역별 안정성 및 이상치 민감도 검증
-3. rolling 조기예측 target 정의 승인
-4. 새 target 기반 시간 검증 모델 구현
-5. 고객가치 기반 CRM 우선순위와 추천·AI 보고서 연결
+- 법인-월 중복, 36개월 연속성, 필수 잔액의 결측·음수를 실패 처리한다.
+- target 미래창은 feature에 사용하지 않는다.
+- 웹 요청 중 모델·CLV·SHAP은 재실행하지 않고 사전 계산 결과만 조회한다. LLM은 명시적 보고서 생성 요청에서만 실행한다.
+- “향후 6개월 지속거래약화 가능성”, “조기관리 필요”, “추천 접촉 전략”을 사용한다.
+- “실제 해지”, “확정 휴면”, “부도 위험”, “확정 회계손실”로 표현하지 않는다.

@@ -1,73 +1,142 @@
-# Corporate RM Persistent Transaction Weakening Service
+# Corporate RM M12 Intervention Service
 
-기업금융 RM이 법인고객의 지속적인 거래관계 약화를 발견하고, 고객가치에 따라 관리 순서와 접촉 전략을 정하도록 지원하는 프로젝트입니다.
+기업금융 RM이 향후 6개월의 지속거래약화 위험을 확인하고, FISIM 기반 잠재 손실에 따라 방어 대상을 정하도록 지원하는 프로젝트입니다.
 
-프로젝트의 기준 설계 문서는 [financial_dormancy.md](/Users/gggyyu/Final_project/financial_dormancy.md), 최종 Y의 분석 근거는 [y_setting_pipeline.md](/Users/gggyyu/Final_project/y_setting_pipeline.md)입니다.
+현재 운영 계약의 최종 근거는 다음 코드와 산출물입니다.
 
-## Final Target
+- `src/models/web_service_m12_final_scoring.py`: 최종 모델 검증과 2025-12 추론
+- `src/models/web_m12_final_scores_202512_all_3372.csv`: 전체 3,372개 점수·위험밴드·SHAP Top 10
+- `src/models/web_m12_final_risk_trend_202507_202512.csv`: 2025-07~12 동일 모델 위험 추세
+- `src/수익성F(y선정포함).ipynb`: 최종 Y, FISIM, CLV 및 방어순위
 
-최종 Y는 `Y_지속거래약화_3M70`입니다.
+구현 상세는 `financial_dormancy.md`와 `docs/superpowers/specs/2026-07-23-final-164-model-service-integration-design.md`에 기록합니다.
+
+## Final Operating Target
+
+운영 모델의 Y는 `Y_INTERVENE_M12_v2`입니다. 기준월 `c`에서 활동축은 다음과 같습니다.
 
 ```text
-핵심거래활동금액 = 입출금활동금액 + 채널활동금액 + 카드활동금액
+D = 요구불입금금액 + 요구불출금금액
+A = 자동이체금액
+C = 창구 + 인터넷뱅킹 + 스마트뱅킹 + 폰뱅킹 + ATM 거래금액
+K = 신용카드사용금액 + 체크카드사용금액
 
-Y_지속거래약화_3M70 = 1
-if
-핵심거래 YoY ratio < 0.50이 3개월 연속 발생
-AND
-이벤트 이후 3개월 평균 / 이벤트 이전 12개월 평균 < 0.70
+ONSET_g   = c+1~c+3의 각 전년동월비가 모두 0.60 미만
+PERSIST_g = mean(c+4:c+6) / mean(c-11:c) < 0.70
+W_g       = ONSET_g AND PERSIST_g
+
+Y_INTERVENE_M12_v2 = W_D AND (W_A OR W_C OR W_K)
 ```
 
-3개월 연속 조건이 처음 완성된 세 번째 달을 이벤트월로 사용합니다. 이벤트월은 전후 평균에서 제외하며, `0.50`과 `0.70`은 양성 경계에 포함하지 않습니다.
+D가 판정 가능하고 A/C/K 중 하나 이상이 판정 가능할 때만 `score_eligible=True`입니다. 운영 기준월 `2025-12`의 3,372개 법인 중 적격 3,341개만 DB·API·화면·KPI에 노출하며, 부적격 31개를 음성으로 대체하지 않습니다.
 
-이 Y는 실제 해지나 확정 휴면이 아니라 2023-01~2025-12의 36개월 완전관측 법인 3,372개에서 정의한 지속거래약화 proxy입니다. 분석상 516개 법인(15.30%)이 최종 조건을 충족했습니다.
+`Y_지속거래약화_3M70`은 최종 Y 탐색 과정의 과거 사후 이벤트 라벨입니다. 현재 배포 모델의 target이나 성능으로 사용하지 않습니다.
 
-## Current Status
+## Final Model
 
-- 최종 이벤트 Y 확정
-- pandas 기반 법인×월 라벨 및 사건 테이블 구현
-- 기존 5축 동시감소 Y와 해당 모델 성능 사용 중단
-- rolling 조기예측 target과 새 모델 성능은 재설계·재학습 대기
+- Feature set: `FS_FINAL_164_TUNED`, 164개
+- Model: LightGBM
+- Calibration: validation에서 잠근 Platt
+- Operating threshold: `0.26479401324821045`
+- Operating cutoff: `2025-12`
+- 점수 의미: 향후 6개월 `Y_INTERVENE_M12_v2` 발생 확률
 
-## Run Labels
+점수는 실제 해지·부도·확정 휴면 확률이 아닙니다. 서비스는 전체 3,372개가 담긴 최종 점수에서 `score_eligible=True`인 3,341개만 필터링합니다. 위험 구간은 적격 모집단 확률순위 기준 상위 1%, 1~3%, 3~5%, 5~10%, 나머지 90%의 5개 밴드이며, 고객별 설명은 절대 기여도 기준 `SHAP Top 10`을 저장합니다.
+
+## FISIM CLV Priority
+
+월말 잔액과 월별 금리를 사용해 다음 FISIM 기여를 계산합니다.
+
+```text
+V_FTP = 대출잔액 × (기업대출금리 - FTP)
+      + 저축성수신잔액 × (FTP - 저축성수신금리)
+      + 요구불잔액 × (FTP - 0.0001)
+```
+
+은행 금리는 `% / 100`, FTP는 이미 decimal이므로 재변환하지 않습니다. 월평잔과 일수 연환산은 사용하지 않습니다. CLV의 가치 기초는 2025-12 기준 최근 실제 6개월(2025-07~12) 월별 FISIM 합계입니다.
+
+```text
+CLV_NoRisk = Σ(actual_FISIM_m), m=2025-07..2025-12
+CLV_Risk = CLV_NoRisk / (1+p)
+PotentialLoss = CLV_NoRisk - CLV_Risk
+defense_value = max(PotentialLoss, 0)
+```
+
+화면에는 `CLV_Risk`, `PotentialLoss`, `방어순위`만 표시합니다. `CLV_NoRisk`는 감사·재현을 위해 DB에만 저장합니다. `PotentialLoss`는 최근 6개월 실제 FISIM 기반 위험조정 경제적 기여가치 차이이며 확정 회계손실이 아닙니다.
+
+## Run the Service
+
+저장된 최종 점수와 원천·금리 CSV로 CLV를 계산하고 SQLite를 원자적으로 재생성합니다. 노트북이나 모델을 웹 요청 중 실행하지 않습니다.
+
+먼저 백엔드 의존성이 설치된 Python 환경을 활성화합니다. 프로젝트를 처음 받은 경우 루트와 프론트엔드의 Node 의존성을 각각 한 번 설치합니다.
 
 ```bash
-python -m src.preprocessing.run_persistent_transaction_weakening_labels \
-  --input /path/to/corporate_monthly.csv \
-  --output-dir outputs/persistent_transaction_weakening_labels
+npm install
+npm --prefix src/frontend/rm-insight-copilot install
 ```
 
-출력:
+최초 실행 또는 입력 데이터 변경 시 서비스 DB를 준비합니다.
+
+```bash
+python -m src.backend.prepare_service_database
+```
+
+이후 프로젝트 루트에서 백엔드와 프론트엔드를 함께 실행합니다.
+
+```bash
+npm run dev
+```
+
+백엔드는 `http://127.0.0.1:8000`, 프론트엔드는 `http://127.0.0.1:5173`에서 실행됩니다. `Ctrl+C`를 누르거나 한 프로세스가 종료되면 나머지 프로세스도 함께 종료됩니다.
+
+기본 생성물:
 
 ```text
-persistent_transaction_weakening_panel.csv
-persistent_transaction_weakening_events.csv
+outputs/rm_service_inputs/clv_202512.csv
+outputs/rm_service/rm_service.sqlite
 ```
 
 ## Service Flow
 
 ```text
-36개월 완전관측 코호트
-→ Y_지속거래약화_3M70 이벤트 라벨
-→ rolling 예측 target 승인
-→ 지속거래약화 예측
-→ 고객가치 기반 CRM 우선순위
-→ 세그먼트 추천
-→ SHAP/차트 기반 AI 전략 보고서
+36개월 원천 패널
+→ Y_INTERVENE_M12_v2 최종 164피처 LightGBM·Platt 점수
+→ score_eligible 적격 3,341개 필터
+→ FISIM 기반 CLV_Risk·PotentialLoss
+→ 방어순위 및 세그먼트 추천
+→ 저장 SHAP 기반 AI 전략 보고서
 ```
 
-## Rules
+## Gemini AI Report and PDF
 
-- 결측 고객-월과 결측 금액을 0으로 처리하지 않습니다.
-- 전년 동월이 0이면 YoY 감소를 판정하지 않습니다.
-- 사후 확인용 이후 3개월 정보를 모델 feature로 사용하지 않습니다.
-- 새 Y로 재학습하기 전에는 과거 모델 성능을 현재 성과로 제시하지 않습니다.
-- 결과를 실제 해지나 전체 법인 모집단의 성과로 일반화하지 않습니다.
+AI 리포트의 `전략 보고서 생성`은 `POST /api/reports/{corporate_id}/generate`를 호출한다. 백엔드는 저장된 위험, `CLV_Risk`, `PotentialLoss`, D/A/C/K 변화율, `SHAP Top 10`, 추천 결과만 Gemini에 전달하고 6개 고정 섹션을 구조화해 반환한다. 정량 수치와 SHAP은 Gemini가 재생성하지 않는다.
+
+```bash
+GEMINI_API_KEY=<your-key> \
+RM_REPORT_FONT_PATH=/path/to/korean-font.ttf \
+RM_SERVICE_DB_PATH=outputs/rm_service/rm_service.sqlite \
+  conda run -n final uvicorn src.backend.app:app --host 127.0.0.1 --port 8000
+```
+
+`PDF 다운로드`는 화면의 구조화 보고서를 `POST /api/reports/{corporate_id}/pdf`로 보내고, 백엔드가 DB 근거와 다시 대조한 뒤 한국어 A4 PDF를 메모리에서 생성한다. AI 보고서와 PDF는 DB에 저장하지 않는다. `RM_REPORT_FONT_PATH`가 없으면 macOS AppleGothic/NotoSansGothic 또는 Linux Noto/Nanum 폰트를 순서대로 탐색한다. 자동화 테스트는 Gemini를 대체해 외부 비용을 발생시키지 않는다.
 
 ## Main Artifacts
 
-- Design: [financial_dormancy.md](/Users/gggyyu/Final_project/financial_dormancy.md)
-- Y evidence: [y_setting_pipeline.md](/Users/gggyyu/Final_project/y_setting_pipeline.md)
-- Implementation spec: [2026-07-13-persistent-transaction-weakening-y-design.md](/Users/gggyyu/Final_project/docs/superpowers/specs/2026-07-13-persistent-transaction-weakening-y-design.md)
-- Implementation plan: [2026-07-13-persistent-transaction-weakening-y.md](/Users/gggyyu/Final_project/docs/superpowers/plans/2026-07-13-persistent-transaction-weakening-y.md)
-- Modeling gate: [src/models/model.md](/Users/gggyyu/Final_project/src/models/model.md)
+- 운영 설계: `financial_dormancy.md`
+- 최종 Y 탐색 이력: `y_setting_pipeline.md`
+- 모델 정의: `src/models/model.md`
+- 서비스 통합 설계: `docs/superpowers/specs/2026-07-21-m12-model-clv-service-integration-design.md`
+- 서비스 준비: `src/backend/prepare_service_database.py`
+- FISIM/CLV 구현: `src/backend/m12_clv.py`
+
+## Project Layout
+
+```text
+src/backend/                         현재 FastAPI·SQLite·CLV·AI 보고서 코드
+src/frontend/rm-insight-copilot/     현재 React 서비스
+src/models/                          최종 웹 모델 노트북·운영 산출물 계약
+tests/                               현재 서비스와 최종 모델 계약 테스트
+outputs/                             현재 서비스 입력·DB·최종 모델 재현 산출물
+```
+
+기본 `pytest`는 활성 `tests/`만 수집하며, 현재 구현은 `AGENTS.md`의 source-of-truth 순서를 따른다.

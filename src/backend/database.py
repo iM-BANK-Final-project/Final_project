@@ -1,0 +1,200 @@
+"""SQLite connection, final CLV schema, and atomic replacement helpers."""
+
+from collections.abc import Callable
+from contextlib import suppress
+from pathlib import Path
+import sqlite3
+
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS customers (
+    corporate_id TEXT PRIMARY KEY,
+    corporate_name TEXT,
+    industry TEXT NOT NULL,
+    region TEXT NOT NULL,
+    customer_grade TEXT NOT NULL,
+    dedicated_yn INTEGER NOT NULL CHECK (dedicated_yn IN (0, 1))
+);
+
+CREATE TABLE IF NOT EXISTS risk_scores (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    risk_probability REAL NOT NULL CHECK (risk_probability BETWEEN 0 AND 1),
+    risk_rank INTEGER NOT NULL,
+    risk_band TEXT NOT NULL,
+    risk_band_name TEXT NOT NULL,
+    risk_band_order INTEGER NOT NULL,
+    predicted_positive INTEGER NOT NULL CHECK (predicted_positive IN (0, 1)),
+    threshold REAL NOT NULL CHECK (threshold BETWEEN 0 AND 1),
+    PRIMARY KEY (corporate_id, as_of_month, model_name),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS segments (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    baseline_segment_name TEXT NOT NULL,
+    segment_name TEXT NOT NULL,
+    segment_transition TEXT NOT NULL,
+    PRIMARY KEY (corporate_id, as_of_month),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS clv_values (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    clv_no_risk REAL NOT NULL,
+    clv_risk REAL NOT NULL,
+    potential_loss REAL NOT NULL,
+    defense_value REAL NOT NULL CHECK (defense_value >= 0),
+    defense_rank INTEGER,
+    PRIMARY KEY (corporate_id, as_of_month),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS weakening_signals (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    signal_type TEXT NOT NULL,
+    current_value REAL NOT NULL,
+    comparison_value REAL NOT NULL,
+    change_rate REAL,
+    signal_rank INTEGER NOT NULL,
+    PRIMARY KEY (corporate_id, as_of_month, signal_type),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS shap_factors (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    feature_name TEXT NOT NULL,
+    feature_value REAL,
+    shap_value REAL NOT NULL,
+    abs_shap_rank INTEGER NOT NULL,
+    PRIMARY KEY (corporate_id, as_of_month, model_name, abs_shap_rank),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS recommendations (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    weakening_type TEXT NOT NULL,
+    priority_level TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    contact_strategy TEXT NOT NULL,
+    recommended_action TEXT NOT NULL,
+    strategy_summary TEXT NOT NULL,
+    PRIMARY KEY (corporate_id, as_of_month),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS customer_snapshots (
+    corporate_id TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    risk_probability REAL NOT NULL CHECK (risk_probability BETWEEN 0 AND 1),
+    risk_rank INTEGER NOT NULL,
+    risk_band TEXT NOT NULL,
+    risk_band_name TEXT NOT NULL,
+    risk_band_order INTEGER NOT NULL,
+    predicted_positive INTEGER NOT NULL CHECK (predicted_positive IN (0, 1)),
+    threshold REAL NOT NULL CHECK (threshold BETWEEN 0 AND 1),
+    clv_no_risk REAL NOT NULL,
+    clv_risk REAL NOT NULL,
+    potential_loss REAL NOT NULL,
+    defense_value REAL NOT NULL CHECK (defense_value >= 0),
+    defense_rank INTEGER,
+    segment_name TEXT NOT NULL,
+    weakening_type TEXT NOT NULL,
+    industry TEXT NOT NULL,
+    region TEXT NOT NULL,
+    dedicated_yn INTEGER NOT NULL CHECK (dedicated_yn IN (0, 1)),
+    PRIMARY KEY (corporate_id, as_of_month),
+    FOREIGN KEY (corporate_id) REFERENCES customers (corporate_id)
+);
+
+CREATE TABLE IF NOT EXISTS monthly_summaries (
+    as_of_month TEXT PRIMARY KEY,
+    managed_customer_count INTEGER NOT NULL,
+    average_risk REAL NOT NULL CHECK (average_risk BETWEEN 0 AND 1),
+    threshold_share REAL NOT NULL CHECK (threshold_share BETWEEN 0 AND 1),
+    potential_loss_total REAL NOT NULL,
+    signal_distribution_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS risk_trends (
+    as_of_month TEXT PRIMARY KEY,
+    eligible_count INTEGER NOT NULL CHECK (eligible_count >= 0),
+    average_risk REAL NOT NULL CHECK (average_risk BETWEEN 0 AND 1),
+    threshold_count INTEGER NOT NULL CHECK (threshold_count >= 0),
+    threshold_share REAL NOT NULL CHECK (threshold_share BETWEEN 0 AND 1),
+    model_name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS import_runs (
+    run_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    status TEXT NOT NULL,
+    as_of_month TEXT NOT NULL,
+    source_manifest_json TEXT NOT NULL,
+    row_counts_json TEXT NOT NULL,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_risk_scores_month_band
+    ON risk_scores (as_of_month, risk_band_order);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_defense_rank
+    ON customer_snapshots (as_of_month, defense_rank);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_risk_band
+    ON customer_snapshots (as_of_month, risk_band_order);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_segment_name
+    ON customer_snapshots (as_of_month, segment_name);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_industry
+    ON customer_snapshots (as_of_month, industry);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_region
+    ON customer_snapshots (as_of_month, region);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_dedicated
+    ON customer_snapshots (as_of_month, dedicated_yn);
+CREATE INDEX IF NOT EXISTS idx_snapshots_month_weakening_type
+    ON customer_snapshots (as_of_month, weakening_type);
+"""
+
+
+def connect_database(path: Path) -> sqlite3.Connection:
+    """Open a SQLite database with the service's required connection settings."""
+    connection = sqlite3.connect(path)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
+def initialize_schema(connection: sqlite3.Connection) -> None:
+    """Create all final service tables and indexes."""
+    connection.executescript(SCHEMA_SQL)
+
+
+def replace_database_atomically(
+    target: Path,
+    populate: Callable[[sqlite3.Connection], None],
+) -> None:
+    """Populate a temporary database and replace target only after success."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.unlink(missing_ok=True)
+    connection = connect_database(temporary)
+    try:
+        initialize_schema(connection)
+        populate(connection)
+        connection.commit()
+        connection.close()
+        temporary.replace(target)
+    except Exception:
+        with suppress(Exception):
+            connection.rollback()
+        with suppress(Exception):
+            connection.close()
+        with suppress(Exception):
+            temporary.unlink(missing_ok=True)
+        raise
